@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = "https://the-council-backend-production-e480.up.railway.app";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://the-council-backend-production-e480.up.railway.app";
 
 export const dynamic = "force-dynamic";
 
