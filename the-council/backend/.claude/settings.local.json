@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py:*)",
+      "Bash(./venv/Scripts/pip install:*)",
+      "Bash(test:*)",
+      "Bash(curl:*)"
+    ]
+  }
+}
