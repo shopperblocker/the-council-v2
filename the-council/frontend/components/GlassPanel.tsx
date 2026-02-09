@@ -4,12 +4,14 @@ interface GlassPanelProps {
   children: React.ReactNode;
   className?: string;
   variant?: "default" | "subtle" | "strong";
+  style?: React.CSSProperties;
 }
 
 export default function GlassPanel({
   children,
   className = "",
   variant = "default",
+  style,
 }: GlassPanelProps) {
   const variants = {
     default: "glass",
@@ -18,7 +20,7 @@ export default function GlassPanel({
   };
 
   return (
-    <div className={`${variants[variant]} ${className}`}>
+    <div className={`${variants[variant]} ${className}`} style={style}>
       {children}
     </div>
   );
