@@ -33,9 +33,17 @@ export interface DebateSession {
 }
 
 // SSE Event payloads
+export interface DebateStartAgent {
+  name: string;
+  display_name: string;
+  emoji: string;
+  color: string;
+  role: string;
+}
+
 export interface DebateStartEvent {
   session_id: string;
-  agents: { name: string; display_name: string; emoji: string; color: string; role: string }[];
+  agents: DebateStartAgent[];
   topic: string;
 }
 

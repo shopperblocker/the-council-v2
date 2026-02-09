@@ -6,7 +6,7 @@ import GlassPanel from "@/components/GlassPanel";
 import ChatMessage from "@/components/ChatMessage";
 import AgentCard from "@/components/AgentCard";
 import { fetchAgents, startDebateStream, sendFollowUpStream } from "@/lib/api";
-import type { Agent, ChatMessage as MessageType } from "@/lib/types";
+import type { Agent, ChatMessage as MessageType, DebateStartEvent } from "@/lib/types";
 
 export default function WarRoom() {
   const router = useRouter();
@@ -70,7 +70,7 @@ export default function WarRoom() {
 
     // Callbacks for SSE events
     const callbacks = {
-      onDebateStart: (data: { session_id: string; agents: Agent[]; topic: string }) => {
+      onDebateStart: (data: DebateStartEvent) => {
         setSessionId(data.session_id);
         setTopic(data.topic);
         // Update selected agents to match what the router picked
