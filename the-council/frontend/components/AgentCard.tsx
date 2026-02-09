@@ -31,7 +31,7 @@ export default function AgentCard({
         `}
         style={{
           borderLeft: isActive ? `3px solid ${agent.color}` : "3px solid transparent",
-          ringColor: isSpeaking ? agent.color : undefined,
+          boxShadow: isSpeaking ? `0 0 0 2px ${agent.color}` : undefined,
         }}
       >
         <span className="text-2xl">{agent.emoji}</span>
@@ -62,7 +62,7 @@ export default function AgentCard({
       `}
       style={{
         borderLeft: `4px solid ${agent.color}`,
-        ringColor: isActive ? agent.color : undefined,
+        boxShadow: isActive ? `0 0 0 2px ${agent.color}` : undefined,
       }}
     >
       <div className="flex items-start gap-3">
