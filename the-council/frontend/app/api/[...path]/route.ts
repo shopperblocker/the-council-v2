@@ -26,7 +26,6 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
     body: body || undefined,
   });
 
-  // Check if this is an SSE stream
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("text/event-stream")) {
     return new Response(res.body, {
