@@ -13,7 +13,7 @@ import type {
   RoundEndEvent,
 } from "./types";
 
-const API_BASE = "/api";
+const API_BASE = "https://the-council-backend-production-e480.up.railway.app/api";
 
 // ── REST endpoints ──
 
