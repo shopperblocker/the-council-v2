@@ -18,7 +18,7 @@ const TABLES = [
     description: "1-on-1 advisory sessions. Deep conversations with a single advisor.",
     href: "/private-desk",
     color: "#3B82F6",
-    ready: false,
+    ready: true,
   },
   {
     name: "Academy",

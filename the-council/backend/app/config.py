@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://council:council@localhost:5432/council"
 
     # CORS
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,https://the-council-v2.vercel.app"
 
     # AI Models — tiered for cost/performance
     model_router: str = "claude-haiku-4-5-20251001"      # Fast routing & classification
