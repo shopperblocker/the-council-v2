@@ -16,7 +16,7 @@ export interface Agent {
 }
 
 export interface ChatMessage {
-  id: string;
+  id?: string;
   sender: string;
   sender_type: "user" | "agent";
   content: string;
@@ -24,6 +24,7 @@ export interface ChatMessage {
   emoji?: string;
   display_name?: string;
   isStreaming?: boolean;
+  created_at?: string;
 }
 
 export interface DebateSession {

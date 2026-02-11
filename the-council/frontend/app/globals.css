@@ -113,3 +113,51 @@ body {
 }
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Mobile Optimizations ── */
+@media (max-width: 768px) {
+  /* Touch-friendly button sizes */
+  .btn-primary,
+  button {
+    min-height: 44px; /* iOS minimum touch target */
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  /* Prevent iOS zoom on input focus */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  .glass-input {
+    font-size: 16px;
+    min-height: 44px;
+    padding: 12px 16px;
+  }
+
+  /* Better mobile scrolling */
+  .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Adjust text sizes */
+  h1 {
+    font-size: 1.75rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  /* Smaller spacing on mobile */
+  .p-6 {
+    padding: 1rem;
+  }
+
+  /* Card adjustments */
+  .glass {
+    border-radius: 12px;
+  }
+}

@@ -23,6 +23,12 @@ export async function fetchAgents(): Promise<Agent[]> {
   return res.json();
 }
 
+export async function fetchPrivateDeskAgents(): Promise<Agent[]> {
+  const res = await fetch(`${API_BASE}/private-desk/agents`);
+  if (!res.ok) throw new Error("Failed to fetch agents");
+  return res.json();
+}
+
 export async function fetchSession(sessionId: string) {
   const res = await fetch(`${API_BASE}/war-room/session/${sessionId}`);
   if (!res.ok) throw new Error("Failed to fetch session");
@@ -35,10 +41,23 @@ export async function fetchSessions() {
   return res.json();
 }
 
+export async function fetchPrivateDeskSessions() {
+  const res = await fetch(`${API_BASE}/private-desk/sessions`);
+  if (!res.ok) throw new Error("Failed to fetch sessions");
+  return res.json();
+}
+
+export async function fetchPrivateDeskSession(sessionId: string) {
+  const res = await fetch(`${API_BASE}/private-desk/session/${sessionId}`);
+  if (!res.ok) throw new Error("Failed to fetch session");
+  return res.json();
+}
+
 // ── SSE Streaming ──
 
 interface SSECallbacks {
   onDebateStart?: (data: DebateStartEvent) => void;
+  onConversationStart?: (data: any) => void; // For Private Desk
   onAgentStart?: (data: AgentStartEvent) => void;
   onAgentToken?: (data: AgentTokenEvent) => void;
   onAgentEnd?: (data: AgentEndEvent) => void;
@@ -111,6 +130,70 @@ export function sendFollowUpStream(
   return controller;
 }
 
+// ── Private Desk Streaming ──
+
+/**
+ * Start a new Private Desk 1-on-1 conversation with SSE streaming.
+ */
+export function startPrivateConversationStream(
+  agent: string,
+  message: string,
+  callbacks: SSECallbacks
+): AbortController {
+  const controller = new AbortController();
+
+  const body = JSON.stringify({ agent, message });
+
+  fetch(`${API_BASE}/private-desk/conversation`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return processSSEStream(res, callbacks);
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError?.({ message: err.message });
+      }
+    });
+
+  return controller;
+}
+
+/**
+ * Send a message in an existing Private Desk conversation.
+ */
+export function sendPrivateMessageStream(
+  sessionId: string,
+  message: string,
+  callbacks: SSECallbacks
+): AbortController {
+  const controller = new AbortController();
+
+  const body = JSON.stringify({ content: message });
+
+  fetch(`${API_BASE}/private-desk/session/${sessionId}/message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return processSSEStream(res, callbacks);
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError?.({ message: err.message });
+      }
+    });
+
+  return controller;
+}
+
 /**
  * Process an SSE stream from a fetch response.
  *
@@ -159,6 +242,9 @@ async function processSSEStream(
         switch (eventType) {
           case "debate_start":
             callbacks.onDebateStart?.(parsed);
+            break;
+          case "conversation_start":
+            callbacks.onConversationStart?.(parsed);
             break;
           case "agent_start":
             callbacks.onAgentStart?.(parsed);

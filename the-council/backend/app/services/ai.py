@@ -66,6 +66,96 @@ class AIService:
             async for text in stream.text_stream:
                 yield text
 
+    async def stream_with_tools(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tools: list[dict],
+        model: str | None = None,
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+        max_tool_iterations: int = 5,
+    ) -> AsyncIterator[str]:
+        """
+        Stream response with tool use support.
+
+        If Claude requests a tool, execute it and continue streaming.
+        Yields both assistant tokens and tool use notifications.
+        """
+        from app.services.tools import execute_tool
+
+        conversation_messages = messages.copy()
+        tool_iterations = 0
+
+        while tool_iterations < max_tool_iterations:
+            tool_calls = []
+            current_text = ""
+
+            async with self.client.messages.stream(
+                model=model or self.model_chat,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_prompt,
+                messages=conversation_messages,
+                tools=tools,
+            ) as stream:
+                # Stream text tokens
+                async for text in stream.text_stream:
+                    current_text += text
+                    yield text
+
+                # Get final message to check for tool use
+                final_message = await stream.get_final_message()
+
+            # Check stop reason
+            if final_message.stop_reason == "end_turn":
+                # Agent finished naturally
+                break
+
+            elif final_message.stop_reason == "tool_use":
+                # Agent wants to use tools
+                tool_iterations += 1
+
+                # Extract tool calls from content blocks
+                for block in final_message.content:
+                    if block.type == "tool_use":
+                        tool_calls.append(block)
+
+                # Execute tools and collect results
+                tool_results = []
+                for tool_call in tool_calls:
+                    # Notify about tool use
+                    yield f"\n\n🔧 Using {tool_call.name}({tool_call.input})\n"
+
+                    # Execute the tool
+                    result = await execute_tool(tool_call.name, tool_call.input)
+
+                    # Notify about result
+                    yield f"✓ Result: {result}\n\n"
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_call.id,
+                        "content": result,
+                    })
+
+                # Add assistant message with tool calls to conversation
+                conversation_messages.append({
+                    "role": "assistant",
+                    "content": final_message.content,
+                })
+
+                # Add tool results to conversation
+                conversation_messages.append({
+                    "role": "user",
+                    "content": tool_results,
+                })
+
+                # Continue loop to get Claude's next response
+            else:
+                # Unexpected stop reason
+                break
+
     async def route_query(self, question: str, available_agents: list[dict]) -> list[str]:
         """
         Use Haiku to intelligently route a question to the right agents.

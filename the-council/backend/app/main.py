@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import init_db, close_db
 from app.routes.war_room import router as war_room_router
+from app.routes.private_desk import router as private_desk_router
 
 
 @asynccontextmanager
@@ -43,6 +44,7 @@ app.add_middleware(
 
 # Routes
 app.include_router(war_room_router)
+app.include_router(private_desk_router)
 
 
 @app.get("/api/health")

@@ -23,6 +23,13 @@ class MessageRequest(BaseModel):
     mention: Optional[str] = Field(default=None, description="@mention a specific agent.")
 
 
+class PrivateDeskRequest(BaseModel):
+    """Start a Private Desk 1-on-1 conversation."""
+    agent: str = Field(..., description="Agent name (e.g., 'Rockefeller')")
+    message: str = Field(..., min_length=1, max_length=2000)
+    session_id: Optional[UUID] = Field(default=None, description="Continue existing session")
+
+
 # ── Responses ──
 
 class AgentInfo(BaseModel):

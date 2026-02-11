@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
 import ChatMessage from "@/components/ChatMessage";
 import AgentCard from "@/components/AgentCard";
-import { fetchAgents } from "@/lib/api";
+import SessionHistory from "@/components/SessionHistory";
+import {
+  fetchPrivateDeskAgents,
+  startPrivateConversationStream,
+  sendPrivateMessageStream,
+} from "@/lib/api";
 import type { Agent, ChatMessage as MessageType } from "@/lib/types";
 
 export default function PrivateDesk() {
@@ -23,7 +28,7 @@ export default function PrivateDesk() {
 
   // Load agents on mount
   useEffect(() => {
-    fetchAgents()
+    fetchPrivateDeskAgents()
       .then(setAgents)
       .catch((err) => console.error("Failed to load agents:", err));
   }, []);
@@ -33,7 +38,7 @@ export default function PrivateDesk() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Start conversation (placeholder - implement later)
+  // Start or continue conversation
   const startConversation = async () => {
     if (!input.trim() || !selectedAgent) return;
 
@@ -45,21 +50,70 @@ export default function PrivateDesk() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const messageToSend = input;
     setInput("");
     setIsResponding(true);
 
-    // TODO: Implement Private Desk SSE streaming
-    // For now, just show a placeholder response
-    setTimeout(() => {
-      const agentMessage: MessageType = {
-        sender: selectedAgent.name,
-        sender_type: "agent",
-        content: "Private Desk streaming coming soon! The backend is ready, just need to wire up the frontend SSE.",
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, agentMessage]);
-      setIsResponding(false);
-    }, 1000);
+    // SSE callbacks
+    const callbacks = {
+      onConversationStart: (data: any) => {
+        setSessionId(data.session_id);
+      },
+
+      onAgentStart: (data: any) => {
+        const agentMsg: MessageType = {
+          sender: data.agent,
+          sender_type: "agent",
+          content: "",
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, agentMsg]);
+      },
+
+      onAgentToken: (data: any) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          for (let i = updated.length - 1; i >= 0; i--) {
+            if (updated[i].sender === data.agent && updated[i].sender_type === "agent") {
+              updated[i] = {
+                ...updated[i],
+                content: updated[i].content + data.token,
+              };
+              break;
+            }
+          }
+          return updated;
+        });
+      },
+
+      onAgentEnd: () => {
+        setIsResponding(false);
+      },
+
+      onRoundEnd: (data: any) => {
+        if (data.session_id) {
+          setSessionId(data.session_id);
+        }
+      },
+
+      onError: (data: { message: string }) => {
+        setIsResponding(false);
+        const errorMsg: MessageType = {
+          sender: "System",
+          sender_type: "agent",
+          content: `Error: ${data.message}`,
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      },
+    };
+
+    // Start or continue conversation
+    if (sessionId) {
+      sendPrivateMessageStream(sessionId, messageToSend, callbacks);
+    } else {
+      startPrivateConversationStream(selectedAgent.name, messageToSend, callbacks);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -67,6 +121,26 @@ export default function PrivateDesk() {
       e.preventDefault();
       startConversation();
     }
+  };
+
+  const handleSessionLoad = (session: any) => {
+    // Load session data
+    setSessionId(session.id);
+
+    // Find the agent from the session
+    const sessionAgent = agents.find((a) => a.name === session.agents[0]);
+    if (sessionAgent) {
+      setSelectedAgent(sessionAgent);
+    }
+
+    // Load messages
+    const loadedMessages = session.messages.map((msg: any) => ({
+      sender: msg.sender_type === "user" ? "You" : msg.sender,
+      sender_type: msg.sender_type,
+      content: msg.content,
+      created_at: msg.created_at,
+    }));
+    setMessages(loadedMessages);
   };
 
   return (
@@ -88,6 +162,7 @@ export default function PrivateDesk() {
               1-on-1 advisory session. Deep conversation with a single advisor.
             </p>
           </div>
+          <SessionHistory mode="private_desk" onSessionLoad={handleSessionLoad} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
