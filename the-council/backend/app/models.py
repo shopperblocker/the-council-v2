@@ -4,16 +4,15 @@ Database Models: SQLAlchemy ORM models for The Council.
 
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, JSON
+from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, JSON, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 from app.database import Base
 
 
 class Session(Base):
     __tablename__ = "sessions"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     mode: Mapped[str] = mapped_column(String(50))  # "war_room", "private_desk", "junto"
     topic: Mapped[str] = mapped_column(Text, nullable=True)
     user_context: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -27,7 +26,7 @@ class Message(Base):
     __tablename__ = "messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sessions.id"))
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("sessions.id"))
     sender: Mapped[str] = mapped_column(String(100))  # "user" or agent name like "Rockefeller"
     sender_type: Mapped[str] = mapped_column(String(20))  # "user" or "agent"
     content: Mapped[str] = mapped_column(Text)
@@ -45,7 +44,7 @@ class SharedMemory(Base):
     value: Mapped[str] = mapped_column(Text)
     source_agent: Mapped[str] = mapped_column(String(100))
     confidence: Mapped[float] = mapped_column(Float, default=0.7)
-    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

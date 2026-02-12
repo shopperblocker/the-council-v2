@@ -1,105 +1,126 @@
 """
-Private Desk Routes: API endpoints for 1-on-1 advisory conversations.
-
-All conversations are streamed via Server-Sent Events (SSE)
-for real-time token delivery to the frontend.
+Private Desk Routes: 1-on-1 advisory session endpoints.
 """
 
-from uuid import UUID
-from fastapi import APIRouter, Depends
+import uuid
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
+from pydantic import BaseModel, Field
+from typing import Optional
 
 from app.database import get_db
-from app.schemas import PrivateDeskRequest, MessageRequest, AgentInfo, SessionOut, MessageOut
-from app.services.private_desk_orchestrator import PrivateDeskOrchestrator
-from app.agents.registry import get_all_agents
 from app.models import Session, Message
+from app.agents.registry import AGENTS
+from app.schemas import AgentInfo, MessageOut, SessionOut
+from app.services.private_desk_orchestrator import get_private_desk_orchestrator
 
-router = APIRouter(prefix="/api/private-desk", tags=["Private Desk"])
+router = APIRouter(prefix="/api/private-desk", tags=["private-desk"])
+
+
+# ── Request schemas ──
+
+class ConversationRequest(BaseModel):
+    agent: str = Field(..., description="Agent name to talk to")
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class FollowUpRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+# ── Endpoints ──
+
+@router.get("/agents")
+async def list_agents() -> list[AgentInfo]:
+    """Return all agents available for Private Desk sessions."""
+    return [
+        AgentInfo(
+            name=a.name,
+            display_name=a.display_name,
+            role=a.role,
+            emoji=a.emoji,
+            color=a.color,
+            board=a.board,
+            voice=a.voice,
+            core_belief=a.core_belief,
+            specializations=a.specializations,
+        )
+        for a in AGENTS.values()
+    ]
 
 
 @router.post("/conversation")
-async def start_private_conversation(
-    request: PrivateDeskRequest,
+async def start_conversation(
+    req: ConversationRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Start a new Private Desk 1-on-1 conversation.
+    """Start a new 1-on-1 Private Desk session. Returns SSE stream."""
+    if req.agent not in AGENTS:
+        raise HTTPException(status_code=404, detail=f"Agent '{req.agent}' not found")
 
-    Returns an SSE stream with agent response.
-    """
-    orchestrator = PrivateDeskOrchestrator(db)
+    orchestrator = get_private_desk_orchestrator()
 
-    async def event_stream():
+    async def generate():
         async for event in orchestrator.start_conversation(
-            agent_name=request.agent,
-            user_message=request.message,
+            agent_name=req.agent,
+            message=req.message,
+            db=db,
         ):
             yield event
 
     return StreamingResponse(
-        event_stream(),
+        generate(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
     )
 
 
 @router.post("/session/{session_id}/message")
-async def send_private_message(
-    session_id: UUID,
-    request: MessageRequest,
+async def continue_conversation(
+    session_id: uuid.UUID,
+    req: FollowUpRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Send a message in an existing Private Desk conversation.
+    """Send a follow-up message in an existing Private Desk session. Returns SSE stream."""
+    orchestrator = get_private_desk_orchestrator()
 
-    Returns an SSE stream with agent response.
-    """
-    orchestrator = PrivateDeskOrchestrator(db)
-
-    async def event_stream():
+    async def generate():
         async for event in orchestrator.continue_conversation(
             session_id=session_id,
-            user_message=request.content,
+            message=req.message,
+            db=db,
         ):
             yield event
 
     return StreamingResponse(
-        event_stream(),
+        generate(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
     )
 
 
-@router.get("/session/{session_id}", response_model=SessionOut)
-async def get_private_session(
-    session_id: UUID,
+@router.get("/session/{session_id}")
+async def get_session(
+    session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-):
-    """Get Private Desk session details with full message history."""
+) -> SessionOut:
+    """Retrieve a full Private Desk session with all messages."""
     result = await db.execute(select(Session).where(Session.id == session_id))
     session = result.scalar_one_or_none()
     if not session:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Session not found")
-
-    if session.mode != "private_desk":
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="This is not a Private Desk session")
 
     msg_result = await db.execute(
         select(Message)
-        .where(Message.session_id == session.id)
+        .where(Message.session_id == session_id)
         .order_by(Message.created_at)
     )
     messages = msg_result.scalars().all()
@@ -124,45 +145,27 @@ async def get_private_session(
 
 
 @router.get("/sessions")
-async def list_private_sessions(
-    db: AsyncSession = Depends(get_db),
+async def list_sessions(
     limit: int = 20,
-):
-    """List recent Private Desk sessions."""
+    db: AsyncSession = Depends(get_db),
+) -> list[SessionOut]:
+    """List recent Private Desk sessions (most recent first)."""
     result = await db.execute(
         select(Session)
         .where(Session.mode == "private_desk")
-        .order_by(Session.created_at.desc())
+        .order_by(desc(Session.created_at))
         .limit(limit)
     )
     sessions = result.scalars().all()
+
     return [
-        {
-            "id": str(s.id),
-            "topic": s.topic,
-            "agents": s.agents,
-            "created_at": s.created_at.isoformat(),
-        }
-        for s in sessions
-    ]
-
-
-# ── Agent Info Endpoints (shared with War Room) ──
-
-@router.get("/agents", response_model=list[AgentInfo])
-async def list_agents():
-    """Get all available agents for Private Desk."""
-    return [
-        AgentInfo(
-            name=a.name,
-            display_name=a.display_name,
-            role=a.role,
-            emoji=a.emoji,
-            color=a.color,
-            board=a.board.value,
-            voice=a.voice,
-            core_belief=a.core_belief,
-            specializations=a.specializations,
+        SessionOut(
+            id=s.id,
+            mode=s.mode,
+            topic=s.topic,
+            agents=s.agents,
+            created_at=s.created_at,
+            messages=[],
         )
-        for a in get_all_agents()
+        for s in sessions
     ]

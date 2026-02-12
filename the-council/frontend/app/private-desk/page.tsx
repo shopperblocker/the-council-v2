@@ -1,282 +1,405 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
-import ChatMessage from "@/components/ChatMessage";
-import AgentCard from "@/components/AgentCard";
 import SessionHistory from "@/components/SessionHistory";
 import {
   fetchPrivateDeskAgents,
-  startPrivateConversationStream,
-  sendPrivateMessageStream,
+  fetchPrivateDeskSession,
+  startPrivateDeskStream,
+  continuePrivateDeskStream,
 } from "@/lib/api";
-import type { Agent, ChatMessage as MessageType } from "@/lib/types";
+import type { Agent, ChatMessage, PrivateDeskSession } from "@/lib/types";
 
-export default function PrivateDesk() {
+type ViewState = "select-agent" | "conversation";
+
+export default function PrivateDeskPage() {
   const router = useRouter();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // State
+  const [view, setView] = useState<ViewState>("select-agent");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-  const [messages, setMessages] = useState<MessageType[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [isResponding, setIsResponding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Refs
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load agents on mount
   useEffect(() => {
     fetchPrivateDeskAgents()
       .then(setAgents)
-      .catch((err) => console.error("Failed to load agents:", err));
+      .catch(() => setError("Failed to load advisors. Is the backend running?"));
   }, []);
 
-  // Auto-scroll
+  // Auto-scroll to latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Start or continue conversation
-  const startConversation = async () => {
-    if (!input.trim() || !selectedAgent) return;
+  // Group agents by board
+  const agentsByBoard = agents.reduce<Record<string, Agent[]>>((acc, agent) => {
+    if (!acc[agent.board]) acc[agent.board] = [];
+    acc[agent.board].push(agent);
+    return acc;
+  }, {});
 
-    const userMessage: MessageType = {
-      sender: "You",
-      sender_type: "user",
-      content: input,
-      created_at: new Date().toISOString(),
-    };
+  const handleSelectAgent = (agent: Agent) => {
+    setSelectedAgent(agent);
+    setView("conversation");
+    setMessages([]);
+    setSessionId(null);
+    inputRef.current?.focus();
+  };
 
-    setMessages((prev) => [...prev, userMessage]);
-    const messageToSend = input;
+  const handleLoadSession = async (session: PrivateDeskSession) => {
+    const agentName = session.agents[0];
+    const agent = agents.find((a) => a.name === agentName);
+    if (!agent) return;
+
+    try {
+      const full = await fetchPrivateDeskSession(session.id);
+      setSelectedAgent(agent);
+      setSessionId(full.id);
+      setMessages(
+        full.messages.map((m) => ({
+          id: String(m.id),
+          sender: m.sender,
+          sender_type: m.sender_type,
+          content: m.content,
+          color: m.sender_type === "agent" ? agent.color : undefined,
+          emoji: m.sender_type === "agent" ? agent.emoji : undefined,
+          display_name: m.sender_type === "agent" ? agent.display_name : undefined,
+          created_at: m.created_at,
+        }))
+      );
+      setView("conversation");
+    } catch {
+      setError("Failed to load session.");
+    }
+  };
+
+  const appendToken = useCallback((token: string) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (!last || !last.isStreaming) return prev;
+      return [
+        ...prev.slice(0, -1),
+        { ...last, content: last.content + token },
+      ];
+    });
+  }, []);
+
+  const handleSend = () => {
+    const text = input.trim();
+    if (!text || isStreaming || !selectedAgent) return;
+
     setInput("");
-    setIsResponding(true);
+    setError(null);
 
-    // SSE callbacks
+    // Add user message
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      sender: "user",
+      sender_type: "user",
+      content: text,
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    setIsThinking(true);
+
+    const isNewSession = !sessionId;
+
     const callbacks = {
-      onConversationStart: (data: any) => {
+      onConversationStart: (data: { session_id: string }) => {
         setSessionId(data.session_id);
+        setIsThinking(false);
+        setIsStreaming(true);
+        // Add empty streaming message placeholder
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `agent-${Date.now()}`,
+            sender: selectedAgent.name,
+            sender_type: "agent" as const,
+            content: "",
+            color: selectedAgent.color,
+            emoji: selectedAgent.emoji,
+            display_name: selectedAgent.display_name,
+            isStreaming: true,
+          },
+        ]);
       },
-
-      onAgentStart: (data: any) => {
-        const agentMsg: MessageType = {
-          sender: data.agent,
-          sender_type: "agent",
-          content: "",
-          created_at: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, agentMsg]);
+      onAgentStart: () => {
+        setIsThinking(false);
+        setIsStreaming(true);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `agent-${Date.now()}`,
+            sender: selectedAgent.name,
+            sender_type: "agent" as const,
+            content: "",
+            color: selectedAgent.color,
+            emoji: selectedAgent.emoji,
+            display_name: selectedAgent.display_name,
+            isStreaming: true,
+          },
+        ]);
       },
-
-      onAgentToken: (data: any) => {
+      onAgentToken: (data: { token: string }) => {
+        appendToken(data.token);
+      },
+      onToolCall: (data: { tool: string }) => {
+        // Show a brief "searching..." indicator in the stream
+        const toolLabel =
+          data.tool === "web_search" ? "🔍 Searching..." :
+          data.tool === "get_stock_price" ? "📈 Getting price..." :
+          data.tool === "calculator" ? "🧮 Calculating..." : "🔧 Using tool...";
         setMessages((prev) => {
-          const updated = [...prev];
-          for (let i = updated.length - 1; i >= 0; i--) {
-            if (updated[i].sender === data.agent && updated[i].sender_type === "agent") {
-              updated[i] = {
-                ...updated[i],
-                content: updated[i].content + data.token,
-              };
-              break;
-            }
-          }
-          return updated;
+          const last = prev[prev.length - 1];
+          if (!last || !last.isStreaming) return prev;
+          return [...prev.slice(0, -1), { ...last, content: last.content + `\n\n*${toolLabel}*\n\n` }];
         });
       },
-
-      onAgentEnd: () => {
-        setIsResponding(false);
+      onConversationEnd: () => {
+        setIsStreaming(false);
+        setIsThinking(false);
+        setMessages((prev) =>
+          prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+        );
       },
-
-      onRoundEnd: (data: any) => {
-        if (data.session_id) {
-          setSessionId(data.session_id);
-        }
-      },
-
       onError: (data: { message: string }) => {
-        setIsResponding(false);
-        const errorMsg: MessageType = {
-          sender: "System",
-          sender_type: "agent",
-          content: `Error: ${data.message}`,
-          created_at: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, errorMsg]);
+        setIsStreaming(false);
+        setIsThinking(false);
+        setError(`Error: ${data.message}`);
+        // Remove empty streaming message if it exists
+        setMessages((prev) => prev.filter((m) => !(m.isStreaming && m.content === "")));
       },
     };
 
-    // Start or continue conversation
-    if (sessionId) {
-      sendPrivateMessageStream(sessionId, messageToSend, callbacks);
+    if (isNewSession) {
+      abortRef.current = startPrivateDeskStream(selectedAgent.name, text, callbacks);
     } else {
-      startPrivateConversationStream(selectedAgent.name, messageToSend, callbacks);
+      abortRef.current = continuePrivateDeskStream(sessionId!, text, {
+        ...callbacks,
+        onConversationStart: undefined, // Not fired for continue
+      });
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      startConversation();
+      handleSend();
     }
   };
 
-  const handleSessionLoad = (session: any) => {
-    // Load session data
-    setSessionId(session.id);
-
-    // Find the agent from the session
-    const sessionAgent = agents.find((a) => a.name === session.agents[0]);
-    if (sessionAgent) {
-      setSelectedAgent(sessionAgent);
-    }
-
-    // Load messages
-    const loadedMessages = session.messages.map((msg: any) => ({
-      sender: msg.sender_type === "user" ? "You" : msg.sender,
-      sender_type: msg.sender_type,
-      content: msg.content,
-      created_at: msg.created_at,
-    }));
-    setMessages(loadedMessages);
-  };
-
-  return (
-    <div className="min-h-screen p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
+  // ── Render: Agent Selection ──
+  if (view === "select-agent") {
+    return (
+      <div className="min-h-screen p-4 md:p-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center gap-4 mb-8">
             <button
               onClick={() => router.push("/")}
-              className="text-gray-500 hover:text-gray-700 mb-2 flex items-center gap-2"
+              className="text-gray-400 hover:text-gray-700 transition-colors text-sm"
             >
-              ← Back to Tables
+              ← Back
             </button>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              🪑 Private Desk
-            </h1>
-            <p className="text-gray-500 mt-1">
-              1-on-1 advisory session. Deep conversation with a single advisor.
-            </p>
-          </div>
-          <SessionHistory mode="private_desk" onSessionLoad={handleSessionLoad} />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Agent Selection Sidebar */}
-          <div className="lg:col-span-1">
-            <GlassPanel className="p-4">
-              <h2 className="font-semibold text-gray-900 mb-4">Select Your Advisor</h2>
-              <div className="space-y-2">
-                {agents.map((agent) => (
-                  <AgentCard
-                    key={agent.name}
-                    agent={agent}
-                    isActive={selectedAgent?.name === agent.name}
-                    onToggle={() => setSelectedAgent(agent)}
-                    compact
-                  />
-                ))}
-              </div>
-            </GlassPanel>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">🪑 Private Desk</h1>
+              <p className="text-sm text-gray-500">Choose your advisor for a 1-on-1 session</p>
+            </div>
           </div>
 
-          {/* Conversation Area */}
-          <div className="lg:col-span-3">
-            <GlassPanel className="flex flex-col h-[calc(100vh-12rem)]">
-              {/* Agent Info */}
-              {selectedAgent && (
-                <div className="p-4 border-b border-gray-200/50">
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl">{selectedAgent.emoji}</span>
-                    <div>
-                      <h2 className="font-bold text-lg" style={{ color: selectedAgent.color }}>
-                        {selectedAgent.display_name}
-                      </h2>
-                      <p className="text-sm text-gray-500">{selectedAgent.role}</p>
-                    </div>
-                  </div>
-                  {selectedAgent.core_belief && (
-                    <p className="text-xs text-gray-600 mt-2 italic">
-                      "{selectedAgent.core_belief}"
-                    </p>
-                  )}
-                </div>
-              )}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              {error}
+            </div>
+          )}
 
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {!selectedAgent && (
-                  <div className="text-center text-gray-400 mt-20">
-                    ← Select an advisor from the sidebar to begin
-                  </div>
-                )}
-
-                {selectedAgent && messages.length === 0 && (
-                  <div className="text-center text-gray-400 mt-20">
-                    <p className="text-lg mb-2">Ready for your first question?</p>
-                    <p className="text-sm">
-                      {selectedAgent.display_name} is waiting to advise you.
-                    </p>
-                  </div>
-                )}
-
-                {messages.map((msg, i) => (
-                  <ChatMessage
-                    key={i}
-                    message={msg}
-                  />
-                ))}
-
-                {isResponding && selectedAgent && (
-                  <ChatMessage
-                    message={{
-                      sender: selectedAgent.name,
-                      sender_type: "agent",
-                      content: "",
-                      created_at: new Date().toISOString(),
-                      color: selectedAgent.color,
-                      emoji: selectedAgent.emoji,
-                      display_name: selectedAgent.display_name,
-                      isStreaming: true,
-                    }}
-                  />
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input */}
-              <div className="p-4 border-t border-gray-200/50">
-                <div className="flex gap-3">
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder={
-                      selectedAgent
-                        ? `Ask ${selectedAgent.display_name}...`
-                        : "Select an advisor first"
-                    }
-                    disabled={!selectedAgent || isResponding}
-                    className="flex-1 px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  />
+          {/* Agent boards */}
+          {Object.entries(agentsByBoard).map(([board, boardAgents]) => (
+            <div key={board} className="mb-8">
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+                {board}
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {boardAgents.map((agent) => (
                   <button
-                    onClick={startConversation}
-                    disabled={!selectedAgent || !input.trim() || isResponding}
-                    className="px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                    key={agent.name}
+                    onClick={() => handleSelectAgent(agent)}
+                    className="text-left group"
                   >
-                    {isResponding ? "..." : "Send"}
+                    <GlassPanel className="p-4 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 cursor-pointer">
+                      <div className="flex items-start gap-3">
+                        <span className="text-3xl">{agent.emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2">
+                            <h3 className="font-bold text-gray-900">{agent.display_name}</h3>
+                            <span className="text-xs text-gray-400">{agent.role}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1 italic leading-relaxed line-clamp-2">
+                            "{agent.core_belief}"
+                          </p>
+                        </div>
+                        <span
+                          className="text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                          style={{ color: agent.color }}
+                        >
+                          →
+                        </span>
+                      </div>
+                    </GlassPanel>
                   </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Render: Conversation ──
+  return (
+    <div className="min-h-screen flex flex-col">
+      {/* Header */}
+      <div className="flex-shrink-0 p-4 border-b border-white/30">
+        <GlassPanel className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setView("select-agent")}
+              className="text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              ←
+            </button>
+            {selectedAgent && (
+              <>
+                <span className="text-2xl">{selectedAgent.emoji}</span>
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">{selectedAgent.display_name}</p>
+                  <p className="text-xs text-gray-400">{selectedAgent.role}</p>
+                </div>
+              </>
+            )}
+          </div>
+          <SessionHistory
+            currentSessionId={sessionId}
+            onSelectSession={handleLoadSession}
+          />
+        </GlassPanel>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-6">
+        <div className="max-w-3xl mx-auto space-y-4">
+          {messages.length === 0 && (
+            <div className="text-center py-16">
+              <span className="text-6xl">{selectedAgent?.emoji}</span>
+              <p className="text-gray-500 mt-4 text-sm">
+                {selectedAgent?.display_name} is ready. What would you like to discuss?
+              </p>
+              <p className="text-gray-400 mt-2 text-xs italic">
+                "{selectedAgent?.core_belief}"
+              </p>
+            </div>
+          )}
+
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex ${msg.sender_type === "user" ? "justify-end" : "justify-start"}`}
+            >
+              {msg.sender_type === "agent" && (
+                <span className="mr-2 text-xl flex-shrink-0 mt-1">{msg.emoji}</span>
+              )}
+              <div
+                className={`
+                  max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed
+                  ${msg.sender_type === "user"
+                    ? "bg-gray-900 text-white rounded-tr-sm"
+                    : "glass rounded-tl-sm"
+                  }
+                `}
+                style={msg.sender_type === "agent" ? { borderLeft: `3px solid ${msg.color}` } : {}}
+              >
+                {msg.sender_type === "agent" && (
+                  <p className="text-xs font-semibold mb-1" style={{ color: msg.color }}>
+                    {msg.display_name}
+                  </p>
+                )}
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+                {msg.isStreaming && (
+                  <span className="inline-block w-1.5 h-4 bg-current opacity-70 animate-pulse ml-0.5 align-middle" />
+                )}
+              </div>
+            </div>
+          ))}
+
+          {isThinking && (
+            <div className="flex justify-start">
+              <span className="mr-2 text-xl">{selectedAgent?.emoji}</span>
+              <div className="glass px-4 py-3 rounded-2xl rounded-tl-sm">
+                <div className="flex gap-1.5 items-center h-4">
+                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                 </div>
               </div>
-            </GlassPanel>
-          </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* Input */}
+      <div className="flex-shrink-0 p-4">
+        <div className="max-w-3xl mx-auto">
+          <GlassPanel className="p-3 flex gap-3 items-end">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={`Ask ${selectedAgent?.display_name ?? "your advisor"} anything...`}
+              rows={1}
+              disabled={isStreaming || isThinking}
+              className="flex-1 resize-none bg-transparent text-sm text-gray-900 placeholder-gray-400 outline-none min-h-[36px] max-h-32 py-2"
+              style={{ fieldSizing: "content" } as React.CSSProperties}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!input.trim() || isStreaming || isThinking}
+              className="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all disabled:opacity-30"
+              style={{
+                backgroundColor: selectedAgent?.color || "#3B82F6",
+                color: "white",
+              }}
+            >
+              ↑
+            </button>
+          </GlassPanel>
+          <p className="text-center text-xs text-gray-400 mt-2">
+            Enter to send · Shift+Enter for new line
+          </p>
         </div>
       </div>
     </div>

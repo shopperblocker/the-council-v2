@@ -1,9 +1,8 @@
 """
-Private Desk Orchestrator: Manages 1-on-1 conversations with streaming.
+Private Desk Orchestrator: 1-on-1 conversations with a single advisor.
 
-This orchestrator handles Private Desk mode where Kyle has focused,
-private conversations with a single advisor. Similar to War Room but
-simplified for single-agent interactions.
+Unlike the War Room (multi-agent debate), this is a direct conversation
+between Kyle and one chosen advisor. Supports tool use and session continuity.
 """
 
 import json
@@ -12,220 +11,197 @@ from typing import AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models import Session, Message
-from app.agents.registry import AgentConfig, get_agent
+from app.agents.registry import AGENTS
 from app.agents.prompts import build_private_desk_prompt
+from app.models import Session, Message
 from app.services.ai import get_ai_service
 from app.services.tools import TOOL_DEFINITIONS
 
 
 class PrivateDeskOrchestrator:
-    """Orchestrates Private Desk 1-on-1 conversations."""
+    """Handles 1-on-1 advisory conversations."""
 
-    def __init__(self, db: AsyncSession):
-        self.db = db
+    def __init__(self):
         self.ai = get_ai_service()
 
     async def start_conversation(
         self,
         agent_name: str,
-        user_message: str,
+        message: str,
+        db: AsyncSession,
     ) -> AsyncIterator[str]:
         """
-        Start a new Private Desk 1-on-1 conversation. Yields SSE-formatted events.
+        Start a new Private Desk session and stream the agent's first response.
 
-        Flow:
-        1. Validate agent exists
-        2. Create session (mode="private_desk")
-        3. Save user message
-        4. Stream agent response
+        Yields raw SSE strings: "event: ...\ndata: ...\n\n"
         """
-        # Step 1: Validate agent
-        agent = get_agent(agent_name)
+        # Validate agent exists
+        agent = AGENTS.get(agent_name)
         if not agent:
-            yield self._sse("error", {"message": f"Agent '{agent_name}' not found."})
+            yield f"event: error\ndata: {json.dumps({'message': f'Agent {agent_name} not found'})}\n\n"
             return
 
-        # Step 2: Create session
+        # Create session
         session = Session(
-            id=uuid.uuid4(),
             mode="private_desk",
-            topic=user_message[:200],  # First 200 chars as topic
-            agents=[agent.name],
+            topic=message[:200],
+            agents=[agent_name],
         )
-        self.db.add(session)
-        await self.db.flush()
+        db.add(session)
+        await db.flush()  # Get the session ID without committing yet
 
-        # Step 3: Save user message
+        # Save user's opening message
         user_msg = Message(
             session_id=session.id,
             sender="user",
             sender_type="user",
-            content=user_message,
+            content=message,
         )
-        self.db.add(user_msg)
-        await self.db.flush()
+        db.add(user_msg)
+        await db.flush()
 
-        # Emit conversation start event
-        yield self._sse("conversation_start", {
+        # Emit conversation_start event
+        start_data = {
             "session_id": str(session.id),
-            "agent": {
-                "name": agent.name,
-                "display_name": agent.display_name,
-                "emoji": agent.emoji,
-                "color": agent.color,
-                "role": agent.role,
-            },
-            "topic": session.topic,
-        })
-
-        # Step 4: Stream agent response
-        system_prompt = build_private_desk_prompt(agent, session.topic)
-        messages = [{"role": "user", "content": user_message}]
-
-        # Emit agent start
-        yield self._sse("agent_start", {
-            "agent": agent.name,
+            "agent": agent_name,
             "display_name": agent.display_name,
             "emoji": agent.emoji,
             "color": agent.color,
-        })
+            "role": agent.role,
+        }
+        yield f"event: conversation_start\ndata: {json.dumps(start_data)}\n\n"
 
-        # Stream the response with tools enabled
+        # Build conversation history for the AI
+        ai_messages = [{"role": "user", "content": message}]
+        system_prompt = build_private_desk_prompt(agent)
+
+        # Stream the response
         full_response = ""
-        async for token in self.ai.stream_with_tools(
+        tool_was_called = False
+
+        async for chunk in self.ai.stream_with_tools(
             system_prompt=system_prompt,
-            messages=messages,
+            messages=ai_messages,
             tools=TOOL_DEFINITIONS,
+            model=self.ai.model_chat,
+            max_tokens=1500,
             temperature=agent.temperature,
         ):
-            full_response += token
-            yield self._sse("agent_token", {"agent": agent.name, "token": token})
+            if chunk["type"] == "tool_call":
+                tool_was_called = True
+                yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
+            elif chunk["type"] == "token":
+                full_response += chunk["text"]
+                yield f"event: agent_token\ndata: {json.dumps({'agent': agent_name, 'token': chunk['text']})}\n\n"
 
-        # Save agent message to DB
+        # Save agent's response
         agent_msg = Message(
             session_id=session.id,
-            sender=agent.name,
+            sender=agent_name,
             sender_type="agent",
             content=full_response,
         )
-        self.db.add(agent_msg)
-        await self.db.flush()
+        db.add(agent_msg)
 
-        # Emit agent end
-        yield self._sse("agent_end", {"agent": agent.name})
-
-        # Emit round end
-        yield self._sse("round_end", {
+        # Emit done event
+        done_data = {
             "session_id": str(session.id),
-            "message_count": 2,  # User + agent
-        })
-
-        await self.db.commit()
+            "agent": agent_name,
+            "message_count": 2,
+        }
+        yield f"event: conversation_end\ndata: {json.dumps(done_data)}\n\n"
 
     async def continue_conversation(
         self,
         session_id: uuid.UUID,
-        user_message: str,
+        message: str,
+        db: AsyncSession,
     ) -> AsyncIterator[str]:
         """
-        Continue an existing Private Desk conversation.
+        Continue an existing Private Desk session.
 
-        Loads full conversation history and uses it as context for the next response.
+        Loads full conversation history so the agent remembers everything.
+        Yields raw SSE strings.
         """
         # Load session
-        result = await self.db.execute(select(Session).where(Session.id == session_id))
+        result = await db.execute(select(Session).where(Session.id == session_id))
         session = result.scalar_one_or_none()
         if not session:
-            yield self._sse("error", {"message": "Session not found."})
+            yield f"event: error\ndata: {json.dumps({'message': 'Session not found'})}\n\n"
             return
 
-        # Validate it's a private desk session
-        if session.mode != "private_desk":
-            yield self._sse("error", {"message": "This is not a Private Desk session."})
-            return
-
-        # Get the agent
         agent_name = session.agents[0] if session.agents else None
-        if not agent_name:
-            yield self._sse("error", {"message": "No agent found for this session."})
-            return
-
-        agent = get_agent(agent_name)
+        agent = AGENTS.get(agent_name)
         if not agent:
-            yield self._sse("error", {"message": f"Agent '{agent_name}' not found."})
+            yield f"event: error\ndata: {json.dumps({'message': f'Agent {agent_name} not found'})}\n\n"
             return
 
-        # Save user message
-        user_msg = Message(
-            session_id=session.id,
-            sender="user",
-            sender_type="user",
-            content=user_message,
-        )
-        self.db.add(user_msg)
-        await self.db.flush()
-
-        # Load full conversation history
-        msg_result = await self.db.execute(
+        # Load full message history
+        msg_result = await db.execute(
             select(Message)
-            .where(Message.session_id == session.id)
+            .where(Message.session_id == session_id)
             .order_by(Message.created_at)
         )
         history = msg_result.scalars().all()
 
-        # Build conversation messages for Claude
-        conversation_messages = []
+        # Save this new user message
+        user_msg = Message(
+            session_id=session_id,
+            sender="user",
+            sender_type="user",
+            content=message,
+        )
+        db.add(user_msg)
+        await db.flush()
+
+        # Build AI message history (convert DB records to Anthropic format)
+        ai_messages = []
         for msg in history:
-            if msg.sender_type == "user":
-                conversation_messages.append({"role": "user", "content": msg.content})
-            else:
-                # Agent message
-                conversation_messages.append({"role": "assistant", "content": msg.content})
+            role = "user" if msg.sender_type == "user" else "assistant"
+            ai_messages.append({"role": role, "content": msg.content})
+        ai_messages.append({"role": "user", "content": message})
 
-        # Build system prompt
-        system_prompt = build_private_desk_prompt(agent, session.topic)
+        system_prompt = build_private_desk_prompt(agent)
 
-        # Emit agent start
-        yield self._sse("agent_start", {
-            "agent": agent.name,
-            "display_name": agent.display_name,
-            "emoji": agent.emoji,
-            "color": agent.color,
-        })
+        # Emit agent_start
+        yield f"event: agent_start\ndata: {json.dumps({'agent': agent_name, 'display_name': agent.display_name, 'emoji': agent.emoji, 'color': agent.color})}\n\n"
 
-        # Stream response with tools enabled
+        # Stream response
         full_response = ""
-        async for token in self.ai.stream_with_tools(
+
+        async for chunk in self.ai.stream_with_tools(
             system_prompt=system_prompt,
-            messages=conversation_messages,
+            messages=ai_messages,
             tools=TOOL_DEFINITIONS,
+            model=self.ai.model_chat,
+            max_tokens=1500,
             temperature=agent.temperature,
         ):
-            full_response += token
-            yield self._sse("agent_token", {"agent": agent.name, "token": token})
+            if chunk["type"] == "tool_call":
+                yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
+            elif chunk["type"] == "token":
+                full_response += chunk["text"]
+                yield f"event: agent_token\ndata: {json.dumps({'agent': agent_name, 'token': chunk['text']})}\n\n"
 
-        # Save agent message
+        # Save agent's response
         agent_msg = Message(
-            session_id=session.id,
-            sender=agent.name,
+            session_id=session_id,
+            sender=agent_name,
             sender_type="agent",
             content=full_response,
         )
-        self.db.add(agent_msg)
-        await self.db.flush()
+        db.add(agent_msg)
 
-        # Emit agent end
-        yield self._sse("agent_end", {"agent": agent.name})
+        # Count total messages
+        total = len(history) + 2  # +2 for the new user msg and this response
+        yield f"event: conversation_end\ndata: {json.dumps({'session_id': str(session_id), 'agent': agent_name, 'message_count': total})}\n\n"
 
-        # Emit round end
-        yield self._sse("round_end", {
-            "session_id": str(session.id),
-            "message_count": len(history) + 1,  # +1 for new agent message
-        })
 
-        await self.db.commit()
+# Singleton
+_orchestrator: PrivateDeskOrchestrator | None = None
 
-    def _sse(self, event: str, data: dict) -> str:
-        """Format a Server-Sent Event."""
-        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+def get_private_desk_orchestrator() -> PrivateDeskOrchestrator:
+    global _orchestrator
+    if _orchestrator is None:
+        _orchestrator = PrivateDeskOrchestrator()
+    return _orchestrator

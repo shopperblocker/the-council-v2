@@ -1,5 +1,8 @@
 """
-Database: Async PostgreSQL with SQLAlchemy 2.0.
+Database: Async SQLAlchemy 2.0 with SQLite (local) and PostgreSQL (production).
+
+SQLite for local development — zero setup, just works.
+PostgreSQL for Railway production — set DATABASE_URL env var.
 """
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -11,13 +14,26 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_async_engine(
-    get_settings().database_url,
-    echo=False,
-    pool_size=5,
-    max_overflow=10,
-)
+def _create_engine():
+    url = get_settings().database_url
+    is_sqlite = url.startswith("sqlite")
 
+    if is_sqlite:
+        return create_async_engine(
+            url,
+            echo=False,
+            connect_args={"timeout": 30},  # Prevent "database is locked" errors
+        )
+    else:
+        return create_async_engine(
+            url,
+            echo=False,
+            pool_size=5,
+            max_overflow=10,
+        )
+
+
+engine = _create_engine()
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

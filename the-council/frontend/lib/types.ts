@@ -33,7 +33,18 @@ export interface DebateSession {
   topic: string;
 }
 
-// SSE Event payloads
+// ── Private Desk types ──
+
+export interface PrivateDeskSession {
+  id: string;
+  mode: string;
+  topic: string | null;
+  agents: string[];
+  created_at: string;
+  messages: ChatMessage[];
+}
+
+// ── SSE Event payloads ──
 export interface DebateStartAgent {
   name: string;
   display_name: string;
@@ -67,6 +78,21 @@ export interface AgentEndEvent {
 export interface RoundEndEvent {
   session_id: string;
   round?: number;
+  message_count: number;
+}
+
+export interface ConversationStartEvent {
+  session_id: string;
+  agent: string;
+  display_name: string;
+  emoji: string;
+  color: string;
+  role: string;
+}
+
+export interface ConversationEndEvent {
+  session_id: string;
+  agent: string;
   message_count: number;
 }
 
