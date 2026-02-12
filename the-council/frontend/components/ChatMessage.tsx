@@ -1,5 +1,6 @@
 "use client";
 
+import ReactMarkdown from "react-markdown";
 import type { ChatMessage as MessageType } from "@/lib/types";
 
 interface ChatMessageProps {
@@ -61,12 +62,12 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             border: `1px solid ${borderLight}`,
           }}
         >
-          <p className="text-sm leading-relaxed text-gray-800 whitespace-pre-wrap">
-            {message.content}
+          <div className="text-sm leading-relaxed text-gray-800 council-markdown">
+            <ReactMarkdown>{message.content}</ReactMarkdown>
             {message.isStreaming && (
               <span className="inline-block w-0.5 h-4 bg-gray-400 ml-0.5 animate-pulse" />
             )}
-          </p>
+          </div>
         </div>
       </div>
     </div>

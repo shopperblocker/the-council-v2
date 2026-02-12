@@ -111,19 +111,23 @@ async def execute_tool(name: str, tool_input: dict) -> str:
 
     elif name == "get_stock_price":
         ticker = tool_input.get("ticker", "").upper()
-        # TODO: Replace with real API (yfinance or Alpha Vantage)
-        mock_prices = {
-            "AAPL": "182.63",
-            "MSFT": "415.20",
-            "TSLA": "248.50",
-            "GOOGL": "175.84",
-            "AMZN": "195.40",
-            "NVDA": "875.30",
-        }
-        price = mock_prices.get(ticker)
-        if price:
-            return json.dumps({"ticker": ticker, "price": price, "currency": "USD", "note": "mock data"})
-        return json.dumps({"ticker": ticker, "error": "ticker not found in mock data"})
+        try:
+            import yfinance as yf
+            stock = yf.Ticker(ticker)
+            info = stock.fast_info
+            price = round(float(info.last_price), 2)
+            prev_close = round(float(info.previous_close), 2)
+            change = round(price - prev_close, 2)
+            change_pct = round((change / prev_close) * 100, 2) if prev_close else 0
+            return json.dumps({
+                "ticker": ticker,
+                "price": price,
+                "change": change,
+                "change_percent": change_pct,
+                "currency": getattr(info, "currency", "USD"),
+            })
+        except Exception as e:
+            return json.dumps({"ticker": ticker, "error": str(e)})
 
     elif name == "web_search":
         query = tool_input.get("query", "")

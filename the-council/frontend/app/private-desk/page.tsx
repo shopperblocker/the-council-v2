@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 import GlassPanel from "@/components/GlassPanel";
 import SessionHistory from "@/components/SessionHistory";
 import {
@@ -339,7 +340,9 @@ export default function PrivateDeskPage() {
                     {msg.display_name}
                   </p>
                 )}
-                <p className="whitespace-pre-wrap">{msg.content}</p>
+                <div className="council-markdown">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                </div>
                 {msg.isStreaming && (
                   <span className="inline-block w-1.5 h-4 bg-current opacity-70 animate-pulse ml-0.5 align-middle" />
                 )}
