@@ -5,6 +5,7 @@ Replaces LangChain entirely. Cleaner, faster, full control.
 Uses async streaming for real-time token delivery.
 """
 
+import asyncio
 import anthropic
 from typing import AsyncIterator
 from app.config import get_settings
@@ -75,22 +76,22 @@ class AIService:
         max_tokens: int = 1024,
         temperature: float = 0.7,
         max_tool_iterations: int = 5,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[dict]:
         """
         Stream response with tool use support.
 
-        If Claude requests a tool, execute it and continue streaming.
-        Yields both assistant tokens and tool use notifications.
+        Yields dicts: {"type": "token", "text": "..."} for streamed text
+                      {"type": "tool_call", "tool": "..."} for tool calls
+
+        Uses a streaming loop so tokens arrive in real-time even when tools
+        are called. Tool I/O runs in a thread so it never blocks the event loop.
         """
         from app.services.tools import execute_tool
 
-        conversation_messages = messages.copy()
+        conversation_messages = list(messages)
         tool_iterations = 0
 
         while tool_iterations < max_tool_iterations:
-            tool_calls = []
-            current_text = ""
-
             async with self.client.messages.stream(
                 model=model or self.model_chat,
                 max_tokens=max_tokens,
@@ -99,61 +100,49 @@ class AIService:
                 messages=conversation_messages,
                 tools=tools,
             ) as stream:
-                # Stream text tokens
+                # Stream text tokens to the client in real-time
                 async for text in stream.text_stream:
-                    current_text += text
-                    yield text
+                    yield {"type": "token", "text": text}
 
-                # Get final message to check for tool use
                 final_message = await stream.get_final_message()
 
-            # Check stop reason
             if final_message.stop_reason == "end_turn":
-                # Agent finished naturally
                 break
 
             elif final_message.stop_reason == "tool_use":
-                # Agent wants to use tools
                 tool_iterations += 1
-
-                # Extract tool calls from content blocks
-                for block in final_message.content:
-                    if block.type == "tool_use":
-                        tool_calls.append(block)
-
-                # Execute tools and collect results
                 tool_results = []
-                for tool_call in tool_calls:
-                    # Notify about tool use
-                    yield f"\n\n🔧 Using {tool_call.name}({tool_call.input})\n"
 
-                    # Execute the tool
-                    result = await execute_tool(tool_call.name, tool_call.input)
+                for block in final_message.content:
+                    if block.type != "tool_use":
+                        continue
 
-                    # Notify about result
-                    yield f"✓ Result: {result}\n\n"
+                    # Notify frontend about the tool call
+                    yield {"type": "tool_call", "tool": block.name}
+
+                    # Run tool off the event loop — yfinance/urllib are synchronous
+                    # and would freeze SSE delivery if called directly
+                    tool_input = dict(block.input)
+                    result = await asyncio.to_thread(
+                        _run_sync_tool, block.name, tool_input
+                    )
 
                     tool_results.append({
                         "type": "tool_result",
-                        "tool_use_id": tool_call.id,
+                        "tool_use_id": block.id,
                         "content": result,
                     })
 
-                # Add assistant message with tool calls to conversation
+                # Add this turn to the conversation and loop for the next response
                 conversation_messages.append({
                     "role": "assistant",
                     "content": final_message.content,
                 })
-
-                # Add tool results to conversation
                 conversation_messages.append({
                     "role": "user",
                     "content": tool_results,
                 })
-
-                # Continue loop to get Claude's next response
             else:
-                # Unexpected stop reason
                 break
 
     async def route_query(self, question: str, available_agents: list[dict]) -> list[str]:
@@ -211,69 +200,6 @@ No explanation. Just the JSON array."""
         # Fallback: return first 3 agents
         return [a["name"] for a in available_agents[:3]]
 
-    async def stream_with_tools(
-        self,
-        system_prompt: str,
-        messages: list[dict],
-        tools: list[dict],
-        model: str | None = None,
-        max_tokens: int = 1024,
-        temperature: float = 0.7,
-    ) -> AsyncIterator[dict]:
-        """
-        Generate a response that can call tools, then stream the final answer.
-
-        Flow:
-        1. First call (non-streaming) — model decides if it needs tools
-        2. If tools called → execute them, feed results back
-        3. Stream the final response token by token
-
-        Yields dicts: {"type": "token", "text": "..."} or {"type": "tool_call", "tool": "..."}
-        """
-        from app.services.tools import execute_tool
-
-        current_messages = list(messages)
-
-        # Step 1: non-streaming call to check for tool use
-        response = await self.client.messages.create(
-            model=model or self.model_chat,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system_prompt,
-            messages=current_messages,
-            tools=tools,
-        )
-
-        has_tool_use = any(block.type == "tool_use" for block in response.content)
-
-        if has_tool_use:
-            # Execute any tool calls
-            tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    yield {"type": "tool_call", "tool": block.name}
-                    result = await execute_tool(block.name, block.input)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
-
-            # Add assistant message + tool results to history
-            current_messages.append({"role": "assistant", "content": response.content})
-            current_messages.append({"role": "user", "content": tool_results})
-
-        # Step 2: stream the final response
-        async with self.client.messages.stream(
-            model=model or self.model_chat,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system_prompt,
-            messages=current_messages,
-        ) as stream:
-            async for text in stream.text_stream:
-                yield {"type": "token", "text": text}
-
     async def synthesize_debate(
         self,
         topic: str,
@@ -309,6 +235,28 @@ Be concise. No filler. Kyle needs clarity, not more words."""
             max_tokens=500,
             temperature=0.3,
         )
+
+
+def _run_sync_tool(name: str, tool_input: dict) -> str:
+    """
+    Synchronous wrapper for tool execution — called via asyncio.to_thread.
+
+    Keeps blocking I/O (yfinance, urllib) off the async event loop so SSE
+    streaming continues uninterrupted while tools run in a thread pool.
+    """
+    import asyncio
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_execute_tool_async(name, tool_input))
+    finally:
+        loop.close()
+
+
+async def _execute_tool_async(name: str, tool_input: dict) -> str:
+    from app.services.tools import execute_tool
+    return await execute_tool(name, tool_input)
 
 
 # Singleton
