@@ -176,8 +176,8 @@ export default function PrivateDesk() {
                     key={agent.name}
                     agent={agent}
                     isActive={selectedAgent?.name === agent.name}
-                    onClick={() => setSelectedAgent(agent)}
-                    variant="compact"
+                    onToggle={() => setSelectedAgent(agent)}
+                    compact
                   />
                 ))}
               </div>
