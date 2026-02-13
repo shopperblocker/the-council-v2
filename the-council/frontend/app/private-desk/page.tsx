@@ -228,9 +228,6 @@ export default function PrivateDesk() {
                   <ChatMessage
                     key={i}
                     message={msg}
-                    agentColor={
-                      msg.sender_type === "agent" ? selectedAgent?.color : undefined
-                    }
                   />
                 ))}
 
@@ -241,9 +238,11 @@ export default function PrivateDesk() {
                       sender_type: "agent",
                       content: "",
                       created_at: new Date().toISOString(),
+                      color: selectedAgent.color,
+                      emoji: selectedAgent.emoji,
+                      display_name: selectedAgent.display_name,
+                      isStreaming: true,
                     }}
-                    agentColor={selectedAgent.color}
-                    isStreaming={true}
                   />
                 )}
 
