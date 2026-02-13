@@ -153,6 +153,30 @@ Keep your response under 150 words. End with a specific recommended action.
     return build_system_prompt(agent, debate_context)
 
 
+def build_private_desk_prompt(agent: AgentConfig) -> str:
+    """
+    Build system prompt for a Private Desk 1-on-1 session.
+
+    No debate format — just a direct, deep conversation between Kyle and one advisor.
+    More thorough responses allowed (up to 300 words vs 150 in War Room).
+    """
+    context = """You are in a PRIVATE DESK session — a 1-on-1 conversation with Kyle.
+
+This is not a debate. You have Kyle's full attention and he has yours.
+
+In this setting:
+- Be more thorough than in the War Room. You may go up to 300 words if the depth is warranted.
+- Ask clarifying questions if you need more context before advising.
+- Reference previous messages in this conversation — build on what's been said.
+- You may use tools if needed (web search, stock prices, calculations) to give better advice.
+- Still end every response with a concrete NEXT PHYSICAL ACTION.
+- IMPORTANT: Never narrate or describe your tool calls in your response. Use the data silently and speak only from conclusions.
+
+This is your chance to give Kyle your most complete, considered advice."""
+
+    return build_system_prompt(agent, context)
+
+
 def build_followup_prompt(agent: AgentConfig, topic: str) -> str:
     """Build system prompt for follow-up responses in an ongoing debate."""
     context = f"""You are in a WAR ROOM debate about: {topic}

@@ -211,6 +211,69 @@ No explanation. Just the JSON array."""
         # Fallback: return first 3 agents
         return [a["name"] for a in available_agents[:3]]
 
+    async def stream_with_tools(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tools: list[dict],
+        model: str | None = None,
+        max_tokens: int = 1024,
+        temperature: float = 0.7,
+    ) -> AsyncIterator[dict]:
+        """
+        Generate a response that can call tools, then stream the final answer.
+
+        Flow:
+        1. First call (non-streaming) — model decides if it needs tools
+        2. If tools called → execute them, feed results back
+        3. Stream the final response token by token
+
+        Yields dicts: {"type": "token", "text": "..."} or {"type": "tool_call", "tool": "..."}
+        """
+        from app.services.tools import execute_tool
+
+        current_messages = list(messages)
+
+        # Step 1: non-streaming call to check for tool use
+        response = await self.client.messages.create(
+            model=model or self.model_chat,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_prompt,
+            messages=current_messages,
+            tools=tools,
+        )
+
+        has_tool_use = any(block.type == "tool_use" for block in response.content)
+
+        if has_tool_use:
+            # Execute any tool calls
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    yield {"type": "tool_call", "tool": block.name}
+                    result = await execute_tool(block.name, block.input)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+
+            # Add assistant message + tool results to history
+            current_messages.append({"role": "assistant", "content": response.content})
+            current_messages.append({"role": "user", "content": tool_results})
+
+        # Step 2: stream the final response
+        async with self.client.messages.stream(
+            model=model or self.model_chat,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_prompt,
+            messages=current_messages,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield {"type": "token", "text": text}
+
     async def synthesize_debate(
         self,
         topic: str,

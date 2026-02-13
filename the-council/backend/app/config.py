@@ -10,10 +10,10 @@ class Settings(BaseSettings):
     # API
     anthropic_api_key: str
 
-    # Database
-    database_url: str = "postgresql+asyncpg://council:council@localhost:5432/council"
+    # Database — SQLite for local dev, PostgreSQL for production
+    database_url: str = "sqlite+aiosqlite:///./council.db"
 
-    # CORS
+    # CORS — comma-separated list of allowed origins
     cors_origins: str = "http://localhost:3000,https://the-council-v2.vercel.app"
 
     # AI Models — tiered for cost/performance
@@ -26,9 +26,11 @@ class Settings(BaseSettings):
     max_agents_per_debate: int = 5
     default_max_tokens: int = 1024
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "protected_namespaces": ("settings_",),  # Silence model_ field warnings
+    }
 
 
 @lru_cache()
