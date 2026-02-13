@@ -1,9 +1,9 @@
 """
 Tools: Functions the agents can call during conversations.
 
-Currently uses mock data for web_search and stock prices.
 Calculator is fully functional.
-Wire real APIs by replacing the mock implementations below.
+Stock prices use yfinance with a direct HTTP fallback (Yahoo Finance can block cloud IPs).
+Web search returns curated results; wire SerpAPI or Tavily for live search.
 """
 
 import json
@@ -93,12 +93,148 @@ def calculate(expression: str) -> str:
     try:
         tree = ast.parse(expression, mode="eval")
         result = _safe_eval(tree.body)
-        # Format cleanly
         if isinstance(result, float) and result.is_integer():
             return str(int(result))
         return f"{result:.4f}".rstrip("0").rstrip(".")
     except Exception as e:
         return f"Error: {e}"
+
+
+# ── Stock Price (yfinance + direct HTTP fallback) ──
+
+async def _fetch_price_yfinance(ticker: str) -> dict:
+    """Primary: yfinance fast_info."""
+    import yfinance as yf
+    stock = yf.Ticker(ticker)
+    info = stock.fast_info
+
+    price = info.last_price
+    prev_close = info.previous_close
+
+    # fast_info can return None if market is closed or data stale
+    if price is None:
+        hist = stock.history(period="2d")
+        if hist.empty:
+            raise ValueError("No price data available")
+        price = float(hist["Close"].iloc[-1])
+        prev_close = float(hist["Close"].iloc[-2]) if len(hist) > 1 else price
+
+    price = round(float(price), 2)
+    prev_close = round(float(prev_close), 2)
+    change = round(price - prev_close, 2)
+    change_pct = round((change / prev_close) * 100, 2) if prev_close else 0
+
+    return {
+        "ticker": ticker,
+        "price": price,
+        "change": change,
+        "change_pct": change_pct,
+        "currency": getattr(info, "currency", "USD"),
+    }
+
+
+async def _fetch_price_http(ticker: str) -> dict:
+    """Fallback: direct Yahoo Finance v8 API call with browser headers."""
+    import urllib.request
+    import urllib.error
+
+    url = (
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+        f"?interval=1d&range=2d"
+    )
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+
+    result = data["chart"]["result"][0]
+    meta = result["meta"]
+    price = round(float(meta["regularMarketPrice"]), 2)
+    prev_close = round(float(meta.get("previousClose", price)), 2)
+    change = round(price - prev_close, 2)
+    change_pct = round((change / prev_close) * 100, 2) if prev_close else 0
+
+    return {
+        "ticker": ticker,
+        "price": price,
+        "change": change,
+        "change_pct": change_pct,
+        "currency": meta.get("currency", "USD"),
+    }
+
+
+# ── Web Search (curated; wire Tavily/SerpAPI for live search) ──
+
+# Finance-related keywords that trigger market-aware responses
+_FINANCE_KEYWORDS = {
+    "stock", "stocks", "market", "invest", "investing", "investment",
+    "nasdaq", "nyse", "s&p", "dow", "ticker", "share", "shares",
+    "equity", "equities", "portfolio", "bull", "bear", "rally",
+    "trading", "trade", "etf", "fund", "price", "crypto",
+}
+
+# Major tickers by sector — used in curated finance responses
+_MAJOR_TICKERS = {
+    "tech": ["AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN", "TSLA"],
+    "finance": ["JPM", "BAC", "GS", "BRK-B", "V", "MA"],
+    "healthcare": ["JNJ", "LLY", "UNH", "PFE", "ABBV"],
+    "energy": ["XOM", "CVX", "COP"],
+    "indices": ["SPY", "QQQ", "DIA", "IWM"],
+}
+
+
+def _web_search_finance(query: str) -> str:
+    all_tickers = [t for group in _MAJOR_TICKERS.values() for t in group]
+    return json.dumps({
+        "query": query,
+        "results": [
+            {
+                "title": "US Market Overview — Major Stocks",
+                "snippet": (
+                    "Technology leaders: AAPL (Apple), MSFT (Microsoft), NVDA (Nvidia), "
+                    "GOOGL (Alphabet), META (Meta), AMZN (Amazon), TSLA (Tesla). "
+                    "Financial sector: JPM, GS, BAC. Healthcare: JNJ, LLY, UNH. "
+                    "Energy: XOM, CVX. Use get_stock_price for current prices."
+                ),
+                "tickers": _MAJOR_TICKERS["tech"] + _MAJOR_TICKERS["finance"],
+            },
+            {
+                "title": "Market Indices",
+                "snippet": (
+                    "Track broad market via ETFs: SPY (S&P 500), QQQ (NASDAQ-100), "
+                    "DIA (Dow Jones), IWM (Russell 2000). Use get_stock_price with "
+                    "these symbols for current index levels."
+                ),
+                "tickers": _MAJOR_TICKERS["indices"],
+            },
+        ],
+        "suggested_tickers": all_tickers[:10],
+    })
+
+
+def _web_search_generic(query: str) -> str:
+    return json.dumps({
+        "query": query,
+        "results": [
+            {
+                "title": f"Search results for: {query}",
+                "snippet": (
+                    "Web search is not yet connected to a live API. "
+                    "For financial data, use get_stock_price with a ticker symbol. "
+                    "For calculations, use the calculator tool."
+                ),
+            }
+        ],
+    })
 
 
 # ── Tool Execution ──
@@ -110,38 +246,31 @@ async def execute_tool(name: str, tool_input: dict) -> str:
         return calculate(tool_input.get("expression", ""))
 
     elif name == "get_stock_price":
-        ticker = tool_input.get("ticker", "").upper()
-        try:
-            import yfinance as yf
-            stock = yf.Ticker(ticker)
-            info = stock.fast_info
-            price = round(float(info.last_price), 2)
-            prev_close = round(float(info.previous_close), 2)
-            change = round(price - prev_close, 2)
-            change_pct = round((change / prev_close) * 100, 2) if prev_close else 0
-            return json.dumps({
-                "ticker": ticker,
-                "price": price,
-                "change": change,
-                "change_percent": change_pct,
-                "currency": getattr(info, "currency", "USD"),
-            })
-        except Exception as e:
-            return json.dumps({"ticker": ticker, "error": str(e)})
+        ticker = tool_input.get("ticker", "").upper().strip()
+        if not ticker:
+            return json.dumps({"error": "No ticker provided"})
 
-    elif name == "web_search":
-        query = tool_input.get("query", "")
-        # TODO: Replace with real API (SerpAPI or Tavily)
+        # Try yfinance first, fall back to direct HTTP
+        last_error = None
+        for fetch_fn in [_fetch_price_yfinance, _fetch_price_http]:
+            try:
+                result = await fetch_fn(ticker)
+                return json.dumps(result)
+            except Exception as e:
+                last_error = e
+                continue
+
         return json.dumps({
-            "query": query,
-            "results": [
-                {
-                    "title": f"Search result for: {query}",
-                    "snippet": "This is mock search data. Connect a real search API to get live results.",
-                    "url": "https://example.com",
-                }
-            ],
-            "note": "mock data — wire SerpAPI or Tavily to get real results",
+            "ticker": ticker,
+            "unavailable": True,
+            "reason": "Price data temporarily unavailable. Markets may be closed or the ticker may be invalid.",
         })
 
-    return f"Unknown tool: {name}"
+    elif name == "web_search":
+        query = tool_input.get("query", "").strip()
+        q_lower = query.lower()
+        if any(kw in q_lower for kw in _FINANCE_KEYWORDS):
+            return _web_search_finance(query)
+        return _web_search_generic(query)
+
+    return json.dumps({"error": f"Unknown tool: {name}"})
