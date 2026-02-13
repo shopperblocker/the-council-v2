@@ -58,7 +58,7 @@ class PrivateDeskOrchestrator:
             content=message,
         )
         db.add(user_msg)
-        await db.flush()
+        await db.commit()  # Commit before streaming — follow-ups must find this session
 
         # Emit conversation_start event
         start_data = {
@@ -102,6 +102,7 @@ class PrivateDeskOrchestrator:
             content=full_response,
         )
         db.add(agent_msg)
+        await db.commit()  # Persist agent response
 
         # Emit done event
         done_data = {
@@ -152,7 +153,7 @@ class PrivateDeskOrchestrator:
             content=message,
         )
         db.add(user_msg)
-        await db.flush()
+        await db.commit()  # Persist before streaming
 
         # Build AI message history (convert DB records to Anthropic format)
         ai_messages = []
@@ -191,6 +192,7 @@ class PrivateDeskOrchestrator:
             content=full_response,
         )
         db.add(agent_msg)
+        await db.commit()  # Persist agent response
 
         # Count total messages
         total = len(history) + 2  # +2 for the new user msg and this response
