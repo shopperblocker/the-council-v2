@@ -41,7 +41,58 @@ export async function fetchSessions() {
   return res.json();
 }
 
-// ── SSE Streaming ──
+// ── Shared SSE Parser ──
+
+/**
+ * Parse an SSE stream and dispatch events to a callback map.
+ *
+ * Handles "event: xxx\ndata: {...}\n\n" format. Both War Room and
+ * Private Desk streams use the same wire format — only the event
+ * names differ, so one parser handles both.
+ */
+async function parseSSEStream(
+  response: Response,
+  handlers: Record<string, (data: unknown) => void>
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) return;
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() || "";
+
+    for (const eventStr of events) {
+      if (!eventStr.trim()) continue;
+
+      const lines = eventStr.split("\n");
+      let eventType = "";
+      let data = "";
+
+      for (const line of lines) {
+        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+        else if (line.startsWith("data: ")) data = line.slice(6);
+      }
+
+      if (!eventType || !data) continue;
+
+      try {
+        const parsed = JSON.parse(data);
+        handlers[eventType]?.(parsed);
+      } catch {
+        // Skip malformed events
+      }
+    }
+  }
+}
+
+// ── War Room SSE Streaming ──
 
 interface SSECallbacks {
   onDebateStart?: (data: DebateStartEvent) => void;
@@ -50,6 +101,17 @@ interface SSECallbacks {
   onAgentEnd?: (data: AgentEndEvent) => void;
   onRoundEnd?: (data: RoundEndEvent) => void;
   onError?: (data: { message: string }) => void;
+}
+
+function sseHandlers(callbacks: SSECallbacks): Record<string, (data: unknown) => void> {
+  return {
+    debate_start: (d) => callbacks.onDebateStart?.(d as DebateStartEvent),
+    agent_start: (d) => callbacks.onAgentStart?.(d as AgentStartEvent),
+    agent_token: (d) => callbacks.onAgentToken?.(d as AgentTokenEvent),
+    agent_end: (d) => callbacks.onAgentEnd?.(d as AgentEndEvent),
+    round_end: (d) => callbacks.onRoundEnd?.(d as RoundEndEvent),
+    error: (d) => callbacks.onError?.(d as { message: string }),
+  };
 }
 
 /**
@@ -74,7 +136,7 @@ export function startDebateStream(
   })
     .then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return processSSEStream(res, callbacks);
+      return parseSSEStream(res, sseHandlers(callbacks));
     })
     .catch((err) => {
       if (err.name !== "AbortError") {
@@ -106,7 +168,7 @@ export function sendFollowUpStream(
   })
     .then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return processSSEStream(res, callbacks);
+      return parseSSEStream(res, sseHandlers(callbacks));
     })
     .catch((err) => {
       if (err.name !== "AbortError") {
@@ -146,6 +208,17 @@ interface PrivateDeskCallbacks {
   onError?: (data: { message: string }) => void;
 }
 
+function privateDeskHandlers(callbacks: PrivateDeskCallbacks): Record<string, (data: unknown) => void> {
+  return {
+    conversation_start: (d) => callbacks.onConversationStart?.(d as ConversationStartEvent),
+    agent_start: (d) => callbacks.onAgentStart?.(d as AgentStartEvent),
+    agent_token: (d) => callbacks.onAgentToken?.(d as { agent: string; token: string }),
+    tool_call: (d) => callbacks.onToolCall?.(d as { tool: string }),
+    conversation_end: (d) => callbacks.onConversationEnd?.(d as ConversationEndEvent),
+    error: (d) => callbacks.onError?.(d as { message: string }),
+  };
+}
+
 export function startPrivateDeskStream(
   agent: string,
   message: string,
@@ -161,7 +234,7 @@ export function startPrivateDeskStream(
   })
     .then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return processPrivateDeskStream(res, callbacks);
+      return parseSSEStream(res, privateDeskHandlers(callbacks));
     })
     .catch((err) => {
       if (err.name !== "AbortError") {
@@ -187,7 +260,7 @@ export function continuePrivateDeskStream(
   })
     .then((res) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return processPrivateDeskStream(res, callbacks);
+      return parseSSEStream(res, privateDeskHandlers(callbacks));
     })
     .catch((err) => {
       if (err.name !== "AbortError") {
@@ -196,125 +269,4 @@ export function continuePrivateDeskStream(
     });
 
   return controller;
-}
-
-async function processPrivateDeskStream(
-  response: Response,
-  callbacks: PrivateDeskCallbacks
-): Promise<void> {
-  const reader = response.body?.getReader();
-  if (!reader) return;
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const events = buffer.split("\n\n");
-    buffer = events.pop() || "";
-
-    for (const eventStr of events) {
-      if (!eventStr.trim()) continue;
-
-      const lines = eventStr.split("\n");
-      let eventType = "";
-      let data = "";
-
-      for (const line of lines) {
-        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
-        else if (line.startsWith("data: ")) data = line.slice(6);
-      }
-
-      if (!eventType || !data) continue;
-
-      try {
-        const parsed = JSON.parse(data);
-        switch (eventType) {
-          case "conversation_start": callbacks.onConversationStart?.(parsed); break;
-          case "agent_start": callbacks.onAgentStart?.(parsed); break;
-          case "agent_token": callbacks.onAgentToken?.(parsed); break;
-          case "tool_call": callbacks.onToolCall?.(parsed); break;
-          case "conversation_end": callbacks.onConversationEnd?.(parsed); break;
-          case "error": callbacks.onError?.(parsed); break;
-        }
-      } catch {
-        // Skip malformed events
-      }
-    }
-  }
-}
-
-/**
- * Process an SSE stream from a fetch response.
- *
- * Parses "event: xxx\ndata: {...}\n\n" format and dispatches to callbacks.
- */
-async function processSSEStream(
-  response: Response,
-  callbacks: SSECallbacks
-): Promise<void> {
-  const reader = response.body?.getReader();
-  if (!reader) return;
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-
-    // Process complete events (separated by double newlines)
-    const events = buffer.split("\n\n");
-    buffer = events.pop() || ""; // Keep incomplete event in buffer
-
-    for (const eventStr of events) {
-      if (!eventStr.trim()) continue;
-
-      const lines = eventStr.split("\n");
-      let eventType = "";
-      let data = "";
-
-      for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          eventType = line.slice(7).trim();
-        } else if (line.startsWith("data: ")) {
-          data = line.slice(6);
-        }
-      }
-
-      if (!eventType || !data) continue;
-
-      try {
-        const parsed = JSON.parse(data);
-
-        switch (eventType) {
-          case "debate_start":
-            callbacks.onDebateStart?.(parsed);
-            break;
-          case "agent_start":
-            callbacks.onAgentStart?.(parsed);
-            break;
-          case "agent_token":
-            callbacks.onAgentToken?.(parsed);
-            break;
-          case "agent_end":
-            callbacks.onAgentEnd?.(parsed);
-            break;
-          case "round_end":
-            callbacks.onRoundEnd?.(parsed);
-            break;
-          case "error":
-            callbacks.onError?.(parsed);
-            break;
-        }
-      } catch {
-        // Skip malformed events
-      }
-    }
-  }
 }

@@ -77,7 +77,6 @@ class PrivateDeskOrchestrator:
 
         # Stream the response
         full_response = ""
-        tool_was_called = False
 
         async for chunk in self.ai.stream_with_tools(
             system_prompt=system_prompt,
@@ -88,7 +87,6 @@ class PrivateDeskOrchestrator:
             temperature=agent.temperature,
         ):
             if chunk["type"] == "tool_call":
-                tool_was_called = True
                 yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
             elif chunk["type"] == "token":
                 full_response += chunk["text"]
@@ -104,11 +102,11 @@ class PrivateDeskOrchestrator:
         db.add(agent_msg)
         await db.commit()  # Persist agent response
 
-        # Emit done event
+        # Emit done event (user message + agent response = 2 for first exchange)
         done_data = {
             "session_id": str(session.id),
             "agent": agent_name,
-            "message_count": 2,
+            "message_count": 2,  # Always 2 for start_conversation (1 user + 1 agent)
         }
         yield f"event: conversation_end\ndata: {json.dumps(done_data)}\n\n"
 
