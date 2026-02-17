@@ -6,6 +6,7 @@ Uses async streaming for real-time token delivery.
 """
 
 import asyncio
+import json
 import anthropic
 from typing import AsyncIterator
 from app.config import get_settings
@@ -185,7 +186,6 @@ No explanation. Just the JSON array."""
         )
 
         # Parse the JSON array from response
-        import json
         try:
             # Handle potential markdown wrapping
             cleaned = response.strip().strip("`").strip()
@@ -244,8 +244,6 @@ def _run_sync_tool(name: str, tool_input: dict) -> str:
     Keeps blocking I/O (yfinance, urllib) off the async event loop so SSE
     streaming continues uninterrupted while tools run in a thread pool.
     """
-    import asyncio
-
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
