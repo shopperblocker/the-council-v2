@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 .next/
 __pycache__/
 *.pyc
@@ -6,3 +6,4 @@ __pycache__/
 .env.local
 .venv/
 venv/
+*.db
