@@ -94,9 +94,18 @@ Models configured in `backend/app/config.py` via `model_router`, `model_chat`, `
 
 **API Routes** (`routes/`):
 - `war_room.py` - FastAPI endpoints:
-  - `POST /api/war-room/debate` - Start new debate
-  - `POST /api/war-room/{session_id}/follow-up` - Follow-up in existing session
-  - `GET /api/war-room/sessions/{session_id}` - Retrieve session with full message history
+  - `POST /api/war-room/debate` - Start new debate (SSE stream)
+  - `POST /api/war-room/session/{session_id}/message` - Follow-up message in existing session (SSE stream)
+  - `GET /api/war-room/session/{session_id}` - Retrieve session with full message history
+  - `GET /api/war-room/sessions` - List recent War Room sessions (query param: `limit`)
+  - `GET /api/war-room/agents` - List all available agents
+  - `GET /api/war-room/agents/board/{board}` - List agents on a specific board
+- `private_desk.py` - FastAPI endpoints:
+  - `POST /api/private-desk/conversation` - Start a new 1-on-1 session (SSE stream)
+  - `POST /api/private-desk/session/{session_id}/message` - Continue an existing session (SSE stream)
+  - `GET /api/private-desk/session/{session_id}` - Retrieve session with full message history
+  - `GET /api/private-desk/sessions` - List recent Private Desk sessions (query param: `limit`)
+  - `GET /api/private-desk/agents` - List all agents available for Private Desk
 
 ### Frontend Structure (`frontend/`)
 
