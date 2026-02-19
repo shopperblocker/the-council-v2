@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     max_agents_per_debate: int = 5
     default_max_tokens: int = 1024
 
+    @field_validator("cors_origins")
+    @classmethod
+    def normalize_cors_origins(cls, v: str) -> str:
+        """Strip whitespace from each comma-separated origin."""
+        return ",".join(o.strip() for o in v.split(",") if o.strip())
+
     @field_validator("database_url")
     @classmethod
     def fix_database_url(cls, v: str) -> str:
