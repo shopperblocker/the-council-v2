@@ -217,7 +217,7 @@ class WarRoomOrchestrator:
                 if agent is None:
                     continue
 
-                system_prompt = build_followup_prompt(agent, session.topic)
+                system_prompt = build_followup_prompt(agent, session.topic, prior_messages)
 
                 yield self._sse("agent_start", {
                     "agent": agent.name,

@@ -75,6 +75,7 @@ async def start_conversation(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
     )
@@ -102,6 +103,7 @@ async def continue_conversation(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
     )
