@@ -177,38 +177,22 @@ This is your chance to give Kyle your most complete, considered advice."""
     return build_system_prompt(agent, context)
 
 
-def build_followup_prompt(agent: AgentConfig, topic: str) -> str:
+def build_followup_prompt(agent: AgentConfig, topic: str, prior_messages: list[dict] | None = None) -> str:
     """Build system prompt for follow-up responses in an ongoing debate."""
+    prior_context = ""
+    if prior_messages:
+        prior_context = "\n### WHAT OTHERS HAVE SAID THIS ROUND\n"
+        for msg in prior_messages:
+            prior_context += f"**{msg['sender']}:** {msg['content']}\n\n"
+        prior_context += (
+            "\nYou may agree, disagree, build upon, or challenge any of these positions. "
+            "Do NOT repeat what they've said — add YOUR unique perspective.\n"
+        )
+
     context = f"""You are in a WAR ROOM debate about: {topic}
 
 Kyle has asked a follow-up question. Respond directly to what he's asking.
 If another Council member is mentioned or @tagged, address their point.
 Keep your response focused and under 150 words.
-"""
-    return build_system_prompt(agent, context)
-
-
-def build_private_desk_prompt(agent: AgentConfig, session_topic: str = "") -> str:
-    """
-    Build system prompt for Private Desk 1-on-1 conversations.
-
-    Different from debate prompt:
-    - No "prior messages from other agents" context
-    - More conversational, less time-limited
-    - Can be more thorough (not restricted to 150 words)
-    """
-    context = f"""You are in a PRIVATE DESK session — a 1-on-1 advisory conversation with Kyle.
-
-This is an intimate, focused dialogue. Take your time. Be thorough.
-
-{f"**SESSION FOCUS:** {session_topic}" if session_topic else ""}
-
-Guidelines:
-- This is a private conversation. Speak directly to Kyle, not to other Council members.
-- You have Kyle's full attention. Be thorough but respect his time.
-- Build on previous exchanges in this conversation.
-- End every response with a concrete next action.
-- You may ask clarifying questions to give better advice.
-- Unlike the War Room debates, you're not limited to 150 words — be as detailed as needed.
-"""
+{prior_context}"""
     return build_system_prompt(agent, context)

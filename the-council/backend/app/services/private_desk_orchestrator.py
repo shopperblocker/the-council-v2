@@ -78,29 +78,35 @@ class PrivateDeskOrchestrator:
         # Stream the response
         full_response = ""
 
-        async for chunk in self.ai.stream_with_tools(
-            system_prompt=system_prompt,
-            messages=ai_messages,
-            tools=TOOL_DEFINITIONS,
-            model=self.ai.model_chat,
-            max_tokens=1500,
-            temperature=agent.temperature,
-        ):
-            if chunk["type"] == "tool_call":
-                yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
-            elif chunk["type"] == "token":
-                full_response += chunk["text"]
-                yield f"event: agent_token\ndata: {json.dumps({'agent': agent_name, 'token': chunk['text']})}\n\n"
+        try:
+            async for chunk in self.ai.stream_with_tools(
+                system_prompt=system_prompt,
+                messages=ai_messages,
+                tools=TOOL_DEFINITIONS,
+                model=self.ai.model_chat,
+                max_tokens=1500,
+                temperature=agent.temperature,
+            ):
+                if chunk["type"] == "tool_call":
+                    yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
+                elif chunk["type"] == "token":
+                    full_response += chunk["text"]
+                    yield f"event: agent_token\ndata: {json.dumps({'agent': agent_name, 'token': chunk['text']})}\n\n"
 
-        # Save agent's response
-        agent_msg = Message(
-            session_id=session.id,
-            sender=agent_name,
-            sender_type="agent",
-            content=full_response,
-        )
-        db.add(agent_msg)
-        await db.commit()  # Persist agent response
+            # Save agent's response
+            agent_msg = Message(
+                session_id=session.id,
+                sender=agent_name,
+                sender_type="agent",
+                content=full_response,
+            )
+            db.add(agent_msg)
+            await db.commit()  # Persist agent response
+
+        except Exception as e:
+            await db.rollback()
+            print(f"[ERROR] Private Desk conversation failed: {e}")
+            yield f"event: error\ndata: {json.dumps({'message': f'Conversation failed: {str(e)}'})}\n\n"
 
         # Emit done event (user message + agent response = 2 for first exchange)
         done_data = {
@@ -168,29 +174,35 @@ class PrivateDeskOrchestrator:
         # Stream response
         full_response = ""
 
-        async for chunk in self.ai.stream_with_tools(
-            system_prompt=system_prompt,
-            messages=ai_messages,
-            tools=TOOL_DEFINITIONS,
-            model=self.ai.model_chat,
-            max_tokens=1500,
-            temperature=agent.temperature,
-        ):
-            if chunk["type"] == "tool_call":
-                yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
-            elif chunk["type"] == "token":
-                full_response += chunk["text"]
-                yield f"event: agent_token\ndata: {json.dumps({'agent': agent_name, 'token': chunk['text']})}\n\n"
+        try:
+            async for chunk in self.ai.stream_with_tools(
+                system_prompt=system_prompt,
+                messages=ai_messages,
+                tools=TOOL_DEFINITIONS,
+                model=self.ai.model_chat,
+                max_tokens=1500,
+                temperature=agent.temperature,
+            ):
+                if chunk["type"] == "tool_call":
+                    yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
+                elif chunk["type"] == "token":
+                    full_response += chunk["text"]
+                    yield f"event: agent_token\ndata: {json.dumps({'agent': agent_name, 'token': chunk['text']})}\n\n"
 
-        # Save agent's response
-        agent_msg = Message(
-            session_id=session_id,
-            sender=agent_name,
-            sender_type="agent",
-            content=full_response,
-        )
-        db.add(agent_msg)
-        await db.commit()  # Persist agent response
+            # Save agent's response
+            agent_msg = Message(
+                session_id=session_id,
+                sender=agent_name,
+                sender_type="agent",
+                content=full_response,
+            )
+            db.add(agent_msg)
+            await db.commit()  # Persist agent response
+
+        except Exception as e:
+            await db.rollback()
+            print(f"[ERROR] Private Desk follow-up failed: {e}")
+            yield f"event: error\ndata: {json.dumps({'message': f'Conversation failed: {str(e)}'})}\n\n"
 
         # Count total messages
         total = len(history) + 2  # +2 for the new user msg and this response

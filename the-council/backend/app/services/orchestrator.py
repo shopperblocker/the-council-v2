@@ -93,57 +93,68 @@ class WarRoomOrchestrator:
         # Step 4: Stream each agent's response
         prior_messages: list[dict] = []
 
-        for agent in agents:
-            # Build prompt with context of prior responses
-            system_prompt = build_debate_prompt(agent, question, prior_messages)
+        try:
+            for agent in agents:
+                # Build prompt with context of prior responses
+                system_prompt = build_debate_prompt(agent, question, prior_messages)
 
-            # Emit agent start
-            yield self._sse("agent_start", {
-                "agent": agent.name,
-                "display_name": agent.display_name,
-                "emoji": agent.emoji,
-                "color": agent.color,
+                # Emit agent start
+                yield self._sse("agent_start", {
+                    "agent": agent.name,
+                    "display_name": agent.display_name,
+                    "emoji": agent.emoji,
+                    "color": agent.color,
+                })
+
+                # Stream the response
+                full_response = ""
+                messages = [{"role": "user", "content": question}]
+
+                async for token in self.ai.stream(
+                    system_prompt=system_prompt,
+                    messages=messages,
+                    temperature=agent.temperature,
+                ):
+                    full_response += token
+                    yield self._sse("agent_token", {"agent": agent.name, "token": token})
+
+                # Save agent message to DB
+                agent_msg = Message(
+                    session_id=session.id,
+                    sender=agent.name,
+                    sender_type="agent",
+                    content=full_response,
+                )
+                self.db.add(agent_msg)
+                await self.db.flush()
+
+                # Track for context
+                prior_messages.append({
+                    "sender": agent.display_name,
+                    "content": full_response,
+                })
+
+                # Emit agent end
+                yield self._sse("agent_end", {"agent": agent.name})
+
+            # Emit round end
+            yield self._sse("round_end", {
+                "round": 1,
+                "session_id": str(session.id),
+                "message_count": len(prior_messages),
             })
 
-            # Stream the response
-            full_response = ""
-            messages = [{"role": "user", "content": question}]
+            await self.db.commit()
 
-            async for token in self.ai.stream(
-                system_prompt=system_prompt,
-                messages=messages,
-                temperature=agent.temperature,
-            ):
-                full_response += token
-                yield self._sse("agent_token", {"agent": agent.name, "token": token})
-
-            # Save agent message to DB
-            agent_msg = Message(
-                session_id=session.id,
-                sender=agent.name,
-                sender_type="agent",
-                content=full_response,
-            )
-            self.db.add(agent_msg)
-            await self.db.flush()
-
-            # Track for context
-            prior_messages.append({
-                "sender": agent.display_name,
-                "content": full_response,
+        except Exception as e:
+            await self.db.rollback()
+            print(f"[ERROR] War Room debate failed: {e}")
+            yield self._sse("error", {"message": f"Debate failed: {str(e)}"})
+            yield self._sse("round_end", {
+                "round": 1,
+                "session_id": str(session.id),
+                "message_count": len(prior_messages),
             })
-
-            # Emit agent end
-            yield self._sse("agent_end", {"agent": agent.name})
-
-        # Emit round end
-        yield self._sse("round_end", {
-            "round": 1,
-            "session_id": str(session.id),
-            "message_count": len(prior_messages),
-        })
-
-        await self.db.commit()
 
     async def follow_up(
         self,
@@ -201,48 +212,58 @@ class WarRoomOrchestrator:
 
         # Stream responses
         prior_messages = []
-        for agent in responding_agents:
-            if agent is None:
-                continue
+        try:
+            for agent in responding_agents:
+                if agent is None:
+                    continue
 
-            system_prompt = build_followup_prompt(agent, session.topic)
+                system_prompt = build_followup_prompt(agent, session.topic, prior_messages)
 
-            yield self._sse("agent_start", {
-                "agent": agent.name,
-                "display_name": agent.display_name,
-                "emoji": agent.emoji,
-                "color": agent.color,
+                yield self._sse("agent_start", {
+                    "agent": agent.name,
+                    "display_name": agent.display_name,
+                    "emoji": agent.emoji,
+                    "color": agent.color,
+                })
+
+                full_response = ""
+                async for token in self.ai.stream(
+                    system_prompt=system_prompt,
+                    messages=conversation_messages,
+                    temperature=agent.temperature,
+                ):
+                    full_response += token
+                    yield self._sse("agent_token", {"agent": agent.name, "token": token})
+
+                # Save
+                agent_msg = Message(
+                    session_id=session.id,
+                    sender=agent.name,
+                    sender_type="agent",
+                    content=full_response,
+                )
+                self.db.add(agent_msg)
+                await self.db.flush()
+
+                prior_messages.append({"sender": agent.display_name, "content": full_response})
+
+                yield self._sse("agent_end", {"agent": agent.name})
+
+            yield self._sse("round_end", {
+                "session_id": str(session.id),
+                "message_count": len(prior_messages),
             })
 
-            full_response = ""
-            async for token in self.ai.stream(
-                system_prompt=system_prompt,
-                messages=conversation_messages,
-                temperature=agent.temperature,
-            ):
-                full_response += token
-                yield self._sse("agent_token", {"agent": agent.name, "token": token})
+            await self.db.commit()
 
-            # Save
-            agent_msg = Message(
-                session_id=session.id,
-                sender=agent.name,
-                sender_type="agent",
-                content=full_response,
-            )
-            self.db.add(agent_msg)
-            await self.db.flush()
-
-            prior_messages.append({"sender": agent.display_name, "content": full_response})
-
-            yield self._sse("agent_end", {"agent": agent.name})
-
-        yield self._sse("round_end", {
-            "session_id": str(session.id),
-            "message_count": len(prior_messages),
-        })
-
-        await self.db.commit()
+        except Exception as e:
+            await self.db.rollback()
+            print(f"[ERROR] War Room follow-up failed: {e}")
+            yield self._sse("error", {"message": f"Follow-up failed: {str(e)}"})
+            yield self._sse("round_end", {
+                "session_id": str(session.id),
+                "message_count": len(prior_messages),
+            })
 
     def _sse(self, event: str, data: dict) -> str:
         """Format a Server-Sent Event."""

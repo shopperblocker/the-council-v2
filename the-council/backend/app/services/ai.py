@@ -17,7 +17,7 @@ class AIService:
 
     def __init__(self):
         settings = get_settings()
-        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key, timeout=60.0)
         self.model_router = settings.model_router
         self.model_chat = settings.model_chat
         self.model_deep = settings.model_deep

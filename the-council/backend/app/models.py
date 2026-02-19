@@ -3,7 +3,7 @@ Database Models: SQLAlchemy ORM models for The Council.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, JSON, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -17,7 +17,7 @@ class Session(Base):
     topic: Mapped[str] = mapped_column(Text, nullable=True)
     user_context: Mapped[dict] = mapped_column(JSON, default=dict)
     agents: Mapped[list] = mapped_column(JSON, default=list)  # Agent names in this session
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     messages: Mapped[list["Message"]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
@@ -26,11 +26,11 @@ class Message(Base):
     __tablename__ = "messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("sessions.id"))
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("sessions.id"), index=True)
     sender: Mapped[str] = mapped_column(String(100))  # "user" or agent name like "Rockefeller"
     sender_type: Mapped[str] = mapped_column(String(20))  # "user" or "agent"
     content: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     session: Mapped["Session"] = relationship(back_populates="messages")
 
@@ -44,8 +44,8 @@ class SharedMemory(Base):
     value: Mapped[str] = mapped_column(Text)
     source_agent: Mapped[str] = mapped_column(String(100))
     confidence: Mapped[float] = mapped_column(Float, default=0.7)
-    session_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    session_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Insight(Base):
@@ -61,4 +61,4 @@ class Insight(Base):
     context_ref: Mapped[str] = mapped_column(Text, nullable=True)
     viewed: Mapped[bool] = mapped_column(default=False)
     acted_on: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
