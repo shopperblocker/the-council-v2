@@ -3,6 +3,7 @@ Configuration: Environment-based settings for The Council.
 """
 
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 
 
@@ -25,6 +26,22 @@ class Settings(BaseSettings):
     max_debate_rounds: int = 3
     max_agents_per_debate: int = 5
     default_max_tokens: int = 1024
+
+    @field_validator("database_url")
+    @classmethod
+    def fix_database_url(cls, v: str) -> str:
+        """Auto-fix DATABASE_URL for async drivers.
+
+        Railway (and Heroku, Render, etc.) provide postgresql:// or
+        postgres:// URLs.  SQLAlchemy async needs the +asyncpg dialect.
+        """
+        # postgres:// is a legacy alias — normalize first
+        if v.startswith("postgres://"):
+            v = v.replace("postgres://", "postgresql://", 1)
+        # Add +asyncpg if it's a bare postgresql:// URL
+        if v.startswith("postgresql://") and "+asyncpg" not in v:
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
 
     model_config = {
         "env_file": ".env",
