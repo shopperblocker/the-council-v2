@@ -33,13 +33,19 @@ npm install
 ### Running the Application
 ```bash
 # Terminal 1: Backend (from backend/)
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000   # Windows
+uvicorn app.main:app --reload --port 8000              # Mac/Linux
 
 # Terminal 2: Frontend (from frontend/)
 npm run dev
 
 # Access at http://localhost:3000
 ```
+
+### Windows-Specific Notes
+- Python 3.14: asyncpg 0.30.0 has no binary wheel — use `asyncpg==0.31.0` locally
+- Scripts (uvicorn, fastapi) may not be on PATH — always use `python -m uvicorn` on Windows
+- pip may default to user install (`C:\Users\<name>\AppData\Roaming\Python\...\Scripts`) — add to PATH or use `python -m` prefix
 
 ### Building for Production
 ```bash
@@ -176,7 +182,30 @@ DATABASE_URL=postgresql+asyncpg://council:council@localhost:5432/council
 CORS_ORIGINS=http://localhost:3000
 ```
 
-**Frontend**: No environment variables required for local dev (API URL hardcoded to localhost:8000)
+**Frontend `.env.local`** (local dev):
+```bash
+# No variables required — Next.js proxy rewrites /api/* to localhost:8000 automatically
+```
+
+## Deployment Checklist
+
+### Railway (Backend)
+| Variable | Example | Notes |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `sk-ant-...` | From console.anthropic.com — verify key is active |
+| `DATABASE_URL` | `postgresql+asyncpg://...` | Railway provides this automatically |
+| `CORS_ORIGINS` | `https://your-app.vercel.app` | Exact Vercel URL, no trailing slash |
+
+### Vercel (Frontend)
+| Variable | Example | Notes |
+|---|---|---|
+| `BACKEND_URL` | `https://your-app.up.railway.app` | **Must include `https://`** — missing protocol breaks the build |
+
+### Branch Strategy
+- All AI-assisted work happens on `claude/` branches
+- Merge to `main` via GitHub PR (branch protection blocks direct push)
+- Railway and Vercel both auto-deploy when `main` is updated
+- Never push directly to `main`
 
 ## Database Schema
 
