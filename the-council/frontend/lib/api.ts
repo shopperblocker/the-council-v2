@@ -24,10 +24,12 @@ import type {
   Insight,
 } from "./types";
 
-// Lesson learned: use env var, never hardcode the backend URL.
-// Local: set NEXT_PUBLIC_API_URL=http://localhost:8000/api in .env.local
-// Production: set NEXT_PUBLIC_API_URL in Vercel dashboard (no proxy needed)
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+// API base uses a relative path by default so all requests go through the
+// Next.js rewrite proxy (next.config.mjs), which forwards /api/* to the
+// backend. This eliminates CORS entirely — the browser never touches the
+// backend directly. Set NEXT_PUBLIC_API_URL only if you want to bypass the
+// proxy (e.g. direct backend access during local development without Next.js).
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 // ── REST endpoints ──
 
