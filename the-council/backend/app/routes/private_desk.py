@@ -42,7 +42,7 @@ async def list_agents() -> list[AgentInfo]:
             role=a.role,
             emoji=a.emoji,
             color=a.color,
-            board=a.board,
+            board=a.board.value,
             voice=a.voice,
             core_belief=a.core_belief,
             specializations=a.specializations,

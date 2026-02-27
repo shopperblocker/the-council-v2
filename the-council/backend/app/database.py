@@ -63,11 +63,12 @@ async def get_db() -> AsyncSession:
             raise
 
 
-async def wait_for_db(max_retries: int = 5, base_delay: float = 1.0):
+async def wait_for_db(max_retries: int = 10, base_delay: float = 0.5):
     """Wait for the database to become reachable with exponential backoff.
 
     Railway can start the app container before PostgreSQL is fully ready.
     This prevents a crash-loop by retrying the initial connection.
+    10 retries × 0.5s base = up to ~3 minutes total, covers Railway cold-start.
     """
     for attempt in range(1, max_retries + 1):
         try:
@@ -77,11 +78,16 @@ async def wait_for_db(max_retries: int = 5, base_delay: float = 1.0):
             return
         except Exception as e:
             if attempt == max_retries:
-                logger.critical("Database unreachable after %d attempts: %s", max_retries, e)
+                url = get_settings().database_url
+                masked = url[:30] + "..." if len(url) > 30 else url
+                logger.critical(
+                    "Database unreachable after %d attempts. URL prefix: %s | Error: %s",
+                    max_retries, masked, e,
+                )
                 raise
-            delay = base_delay * (2 ** (attempt - 1))  # 1s, 2s, 4s, 8s, 16s
+            delay = base_delay * (2 ** (attempt - 1))  # 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256
             logger.warning("DB not ready (attempt %d/%d): %s", attempt, max_retries, e)
-            logger.info("Retrying in %.0fs...", delay)
+            logger.info("Retrying in %.1fs...", delay)
             await asyncio.sleep(delay)
 
 
