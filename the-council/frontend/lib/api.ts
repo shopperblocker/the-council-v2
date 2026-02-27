@@ -14,6 +14,14 @@ import type {
   ConversationStartEvent,
   ConversationEndEvent,
   PrivateDeskSession,
+  UserProfile,
+  FinancialAccount,
+  Transaction,
+  Plan,
+  StudyPath,
+  Product,
+  BusinessOrder,
+  Insight,
 } from "./types";
 
 // Lesson learned: use env var, never hardcode the backend URL.
@@ -39,6 +47,193 @@ export async function fetchSessions() {
   const res = await fetch(`${API_BASE}/war-room/sessions`);
   if (!res.ok) throw new Error("Failed to fetch sessions");
   return res.json();
+}
+
+// ── Profile ──
+
+export async function fetchProfile(): Promise<UserProfile> {
+  const res = await fetch(`${API_BASE}/profile`);
+  if (!res.ok) throw new Error("Failed to fetch profile");
+  return res.json();
+}
+
+export async function updateProfile(data: Partial<UserProfile>): Promise<UserProfile> {
+  const res = await fetch(`${API_BASE}/profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update profile");
+  return res.json();
+}
+
+// ── Financial HQ ──
+
+export async function fetchFinancialDashboard() {
+  const res = await fetch(`${API_BASE}/financial/dashboard`);
+  if (!res.ok) throw new Error("Failed to fetch dashboard");
+  return res.json();
+}
+
+export async function fetchAccounts(): Promise<FinancialAccount[]> {
+  const res = await fetch(`${API_BASE}/financial/accounts`);
+  if (!res.ok) throw new Error("Failed to fetch accounts");
+  return res.json();
+}
+
+export async function createAccount(data: Partial<FinancialAccount>): Promise<FinancialAccount> {
+  const res = await fetch(`${API_BASE}/financial/accounts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create account");
+  return res.json();
+}
+
+export async function fetchTransactions(accountId?: number): Promise<Transaction[]> {
+  const url = accountId
+    ? `${API_BASE}/financial/transactions?account_id=${accountId}`
+    : `${API_BASE}/financial/transactions`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch transactions");
+  return res.json();
+}
+
+export async function createTransaction(data: Partial<Transaction>): Promise<Transaction> {
+  const res = await fetch(`${API_BASE}/financial/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create transaction");
+  return res.json();
+}
+
+// ── Plans Hub ──
+
+export async function fetchPlans(): Promise<Plan[]> {
+  const res = await fetch(`${API_BASE}/plans`);
+  if (!res.ok) throw new Error("Failed to fetch plans");
+  return res.json();
+}
+
+export async function createPlan(data: { title: string; description?: string; category: string; target_date?: string }): Promise<Plan> {
+  const res = await fetch(`${API_BASE}/plans`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create plan");
+  return res.json();
+}
+
+export async function fetchPlan(id: number): Promise<Plan> {
+  const res = await fetch(`${API_BASE}/plans/${id}`);
+  if (!res.ok) throw new Error("Failed to fetch plan");
+  return res.json();
+}
+
+export async function createMilestone(planId: number, data: { title: string; due_date?: string }): Promise<void> {
+  const res = await fetch(`${API_BASE}/plans/${planId}/milestones`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create milestone");
+}
+
+export async function toggleMilestone(planId: number, milestoneId: number, completed: boolean): Promise<void> {
+  const res = await fetch(`${API_BASE}/plans/${planId}/milestones/${milestoneId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ completed }),
+  });
+  if (!res.ok) throw new Error("Failed to update milestone");
+}
+
+// ── Academy ──
+
+export async function fetchStudyPaths(): Promise<StudyPath[]> {
+  const res = await fetch(`${API_BASE}/academy/paths`);
+  if (!res.ok) throw new Error("Failed to fetch study paths");
+  return res.json();
+}
+
+export async function createStudyPath(data: { subject: string; description?: string; difficulty?: string }): Promise<StudyPath> {
+  const res = await fetch(`${API_BASE}/academy/paths`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create study path");
+  return res.json();
+}
+
+// ── Business Engine ──
+
+export async function fetchProducts(): Promise<Product[]> {
+  const res = await fetch(`${API_BASE}/business/products`);
+  if (!res.ok) throw new Error("Failed to fetch products");
+  return res.json();
+}
+
+export async function createProduct(data: Partial<Product>): Promise<Product> {
+  const res = await fetch(`${API_BASE}/business/products`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create product");
+  return res.json();
+}
+
+export async function fetchOrders(): Promise<BusinessOrder[]> {
+  const res = await fetch(`${API_BASE}/business/orders`);
+  if (!res.ok) throw new Error("Failed to fetch orders");
+  return res.json();
+}
+
+export async function fetchBusinessDashboard() {
+  const res = await fetch(`${API_BASE}/business/dashboard`);
+  if (!res.ok) throw new Error("Failed to fetch business dashboard");
+  return res.json();
+}
+
+// ── Insights ──
+
+export async function fetchInsights(): Promise<Insight[]> {
+  const res = await fetch(`${API_BASE}/insights`);
+  if (!res.ok) throw new Error("Failed to fetch insights");
+  return res.json();
+}
+
+// ── Generic SSE Stream for AI-powered endpoints ──
+
+export function startGenericStream(
+  endpoint: string,
+  body: Record<string, unknown>,
+  callbacks: SSECallbacks,
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_BASE}${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return parseSSEStream(res, sseHandlers(callbacks));
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") {
+        callbacks.onError?.({ message: err.message });
+      }
+    });
+
+  return controller;
 }
 
 // ── Shared SSE Parser ──

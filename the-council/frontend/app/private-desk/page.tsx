@@ -207,19 +207,19 @@ export default function PrivateDeskPage() {
   // ── Render: Agent Selection ──
   if (view === "select-agent") {
     return (
-      <div className="min-h-screen p-4 md:p-8">
+      <div className="min-h-[100dvh] p-3 sm:p-4 md:p-8 bg-[#F8F9FA]">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="flex items-center gap-4 mb-8">
+          <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
             <button
-              onClick={() => router.push("/")}
-              className="text-gray-400 hover:text-gray-700 transition-colors text-sm"
+              onClick={() => router.push("/dashboard")}
+              className="text-gray-400 hover:text-gray-700 transition-colors text-sm shrink-0"
             >
-              ← Back
+              &larr; Back
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">🪑 Private Desk</h1>
-              <p className="text-sm text-gray-500">Choose your advisor for a 1-on-1 session</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Private Desk</h1>
+              <p className="text-xs sm:text-sm text-gray-500">Choose your advisor for a 1-on-1 session</p>
             </div>
           </div>
 
@@ -251,7 +251,7 @@ export default function PrivateDeskPage() {
                             <span className="text-xs text-gray-400">{agent.role}</span>
                           </div>
                           <p className="text-xs text-gray-500 mt-1 italic leading-relaxed line-clamp-2">
-                            "{agent.core_belief}"
+                            &ldquo;{agent.core_belief}&rdquo;
                           </p>
                         </div>
                         <span
@@ -274,31 +274,33 @@ export default function PrivateDeskPage() {
 
   // ── Render: Conversation ──
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-[100dvh] flex flex-col bg-[#F8F9FA]">
       {/* Header */}
-      <div className="flex-shrink-0 p-4 border-b border-white/30">
-        <GlassPanel className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <div className="flex-shrink-0 p-3 sm:p-4 border-b border-white/30">
+        <GlassPanel className="max-w-3xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => setView("select-agent")}
-              className="text-gray-400 hover:text-gray-700 transition-colors"
+              className="text-gray-400 hover:text-gray-700 transition-colors shrink-0"
             >
-              ←
+              &larr;
             </button>
             {selectedAgent && (
               <>
-                <span className="text-2xl">{selectedAgent.emoji}</span>
-                <div>
-                  <p className="font-bold text-gray-900 text-sm">{selectedAgent.display_name}</p>
-                  <p className="text-xs text-gray-400">{selectedAgent.role}</p>
+                <span className="text-xl sm:text-2xl shrink-0">{selectedAgent.emoji}</span>
+                <div className="min-w-0">
+                  <p className="font-bold text-gray-900 text-sm truncate">{selectedAgent.display_name}</p>
+                  <p className="text-xs text-gray-400 hidden sm:block">{selectedAgent.role}</p>
                 </div>
               </>
             )}
           </div>
-          <SessionHistory
-            currentSessionId={sessionId}
-            onSelectSession={handleLoadSession}
-          />
+          <div className="shrink-0">
+            <SessionHistory
+              currentSessionId={sessionId}
+              onSelectSession={handleLoadSession}
+            />
+          </div>
         </GlassPanel>
       </div>
 
@@ -312,7 +314,7 @@ export default function PrivateDeskPage() {
                 {selectedAgent?.display_name} is ready. What would you like to discuss?
               </p>
               <p className="text-gray-400 mt-2 text-xs italic">
-                "{selectedAgent?.core_belief}"
+                &ldquo;{selectedAgent?.core_belief}&rdquo;
               </p>
             </div>
           )}

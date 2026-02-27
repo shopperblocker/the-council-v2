@@ -8,15 +8,23 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        display: ["var(--font-display)", "Georgia", "serif"],
+        body: ["var(--font-body)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "Courier New", "monospace"],
+      },
       colors: {
         council: {
-          bg: "#F8F9FA",
-          "bg-dark": "#E9ECEF",
-          text: "#1A1A1A",
-          muted: "#6B7280",
-          accent: "#3B82F6",
-          success: "#10B981",
-          urgent: "#EF4444",
+          bg: "#06060B",
+          surface: "#0D0D14",
+          "surface-elevated": "#14141F",
+          border: "#1A1A2E",
+          gold: "#C9A227",
+          "gold-dim": "#8B7355",
+          ember: "#D4663A",
+          "text-primary": "#F0EDE6",
+          "text-secondary": "#8A8A9A",
+          "text-tertiary": "#4A4A5A",
         },
         agent: {
           rockefeller: "#059669",
@@ -39,6 +47,7 @@ const config: Config = {
       animation: {
         "slide-in": "slideIn 0.3s ease-out",
         "fade-in": "fadeIn 0.2s ease-out",
+        marquee: "marquee 30s linear infinite",
       },
       keyframes: {
         slideIn: {
@@ -48,6 +57,10 @@ const config: Config = {
         fadeIn: {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
+        },
+        marquee: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
         },
       },
     },

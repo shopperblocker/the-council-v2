@@ -86,17 +86,26 @@ USER_DOSSIER = """
 """
 
 
-def build_system_prompt(agent: AgentConfig, debate_context: str = "") -> str:
+def build_system_prompt(
+    agent: AgentConfig,
+    debate_context: str = "",
+    dossier: str | None = None,
+    memory_context: str = "",
+) -> str:
     """
     Build the complete system prompt for an agent.
 
     Args:
         agent: The agent's configuration
         debate_context: Optional context about the current debate format
+        dossier: Dynamic dossier from DB. Falls back to hardcoded USER_DOSSIER.
+        memory_context: Optional shared memory section to inject.
 
     Returns:
         Complete system prompt string
     """
+    user_dossier = dossier or USER_DOSSIER
+
     context_section = ""
     if debate_context:
         context_section = f"""
@@ -104,10 +113,12 @@ def build_system_prompt(agent: AgentConfig, debate_context: str = "") -> str:
 {debate_context}
 """
 
+    memory_section = f"\n{memory_context}\n" if memory_context else ""
+
     return f"""{CONSTITUTION}
 
-{USER_DOSSIER}
-
+{user_dossier}
+{memory_section}
 ## YOUR IDENTITY
 **NAME:** {agent.display_name}
 **ROLE:** {agent.role}
@@ -123,7 +134,13 @@ Remember: You ARE {agent.display_name}. Speak as yourself. Reference your life. 
 """
 
 
-def build_debate_prompt(agent: AgentConfig, topic: str, prior_messages: list[dict]) -> str:
+def build_debate_prompt(
+    agent: AgentConfig,
+    topic: str,
+    prior_messages: list[dict],
+    dossier: str | None = None,
+    memory_context: str = "",
+) -> str:
     """
     Build system prompt for a War Room debate.
 
@@ -150,45 +167,42 @@ Provide your unique perspective based on your expertise. Be direct and substanti
 Keep your response under 150 words. End with a specific recommended action.
 """
 
-    return build_system_prompt(agent, debate_context)
+    return build_system_prompt(agent, debate_context, dossier=dossier, memory_context=memory_context)
 
 
-def build_private_desk_prompt(agent: AgentConfig) -> str:
-    """
-    Build system prompt for a Private Desk 1-on-1 session.
-
-    No debate format — just a direct, deep conversation between Kyle and one advisor.
-    More thorough responses allowed (up to 300 words vs 150 in War Room).
-    """
-    context = """You are in a PRIVATE DESK session — a 1-on-1 conversation with Kyle.
-
-This is not a debate. You have Kyle's full attention and he has yours.
-
-In this setting:
-- Be more thorough than in the War Room. You may go up to 300 words if the depth is warranted.
-- Ask clarifying questions if you need more context before advising.
-- Reference previous messages in this conversation — build on what's been said.
-- You may use tools if needed (web search, stock prices, calculations) to give better advice.
-- Still end every response with a concrete NEXT PHYSICAL ACTION.
-- IMPORTANT: Never narrate or describe your tool calls in your response. Use the data silently and speak only from conclusions.
-
-This is your chance to give Kyle your most complete, considered advice."""
-
-    return build_system_prompt(agent, context)
-
-
-def build_followup_prompt(agent: AgentConfig, topic: str) -> str:
+def build_followup_prompt(
+    agent: AgentConfig,
+    topic: str,
+    prior_messages: list[dict] | None = None,
+    dossier: str | None = None,
+    memory_context: str = "",
+) -> str:
     """Build system prompt for follow-up responses in an ongoing debate."""
+    prior_context = ""
+    if prior_messages:
+        prior_context = "\n### WHAT OTHERS HAVE SAID THIS ROUND\n"
+        for msg in prior_messages:
+            prior_context += f"**{msg['sender']}:** {msg['content']}\n\n"
+        prior_context += (
+            "You may agree, disagree, build upon, or challenge these positions. "
+            "Do NOT repeat what they've said — add YOUR unique perspective.\n"
+        )
+
     context = f"""You are in a WAR ROOM debate about: {topic}
 
 Kyle has asked a follow-up question. Respond directly to what he's asking.
 If another Council member is mentioned or @tagged, address their point.
 Keep your response focused and under 150 words.
-"""
-    return build_system_prompt(agent, context)
+{prior_context}"""
+    return build_system_prompt(agent, context, dossier=dossier, memory_context=memory_context)
 
 
-def build_private_desk_prompt(agent: AgentConfig, session_topic: str = "") -> str:
+def build_private_desk_prompt(
+    agent: AgentConfig,
+    session_topic: str = "",
+    dossier: str | None = None,
+    memory_context: str = "",
+) -> str:
     """
     Build system prompt for Private Desk 1-on-1 conversations.
 
@@ -196,6 +210,7 @@ def build_private_desk_prompt(agent: AgentConfig, session_topic: str = "") -> st
     - No "prior messages from other agents" context
     - More conversational, less time-limited
     - Can be more thorough (not restricted to 150 words)
+    - Tool calls run silently — agent speaks only from conclusions
     """
     context = f"""You are in a PRIVATE DESK session — a 1-on-1 advisory conversation with Kyle.
 
@@ -210,5 +225,7 @@ Guidelines:
 - End every response with a concrete next action.
 - You may ask clarifying questions to give better advice.
 - Unlike the War Room debates, you're not limited to 150 words — be as detailed as needed.
+- You may use tools (web search, stock prices, calculations) to give better advice.
+- IMPORTANT: Never narrate or describe your tool calls. Use the data silently and speak only from conclusions.
 """
-    return build_system_prompt(agent, context)
+    return build_system_prompt(agent, context, dossier=dossier, memory_context=memory_context)

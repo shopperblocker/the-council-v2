@@ -12,7 +12,26 @@
       "Bash(python:*)",
       "Bash(python3:*)",
       "Bash(git checkout:*)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "Bash(railway:*)",
+      "Bash(npm install:*)",
+      "Bash(npm test:*)",
+      "Bash(pytest:*)",
+      "Bash(pip install:*)",
+      "Bash(for name in \"the-council-v2\" \"the-council-v2-production\" \"council\" \"council-v2\")",
+      "Bash(do echo \"Trying: $name\")",
+      "Bash(done)",
+      "Bash(.venv/Scripts/python -m pytest:*)",
+      "Bash(venv/Scripts/python -m pytest tests/ -v)",
+      "Bash(pip show:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(tail:*)",
+      "Bash(cd /c/Users/kylek/Downloads/the-council-v2/the-council/backend && .venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000 2>&1)",
+      "Bash(cd:*)",
+      "Bash(netstat:*)",
+      "Bash(cmd:*)",
+      "Bash(git:*)"
     ]
   }
 }

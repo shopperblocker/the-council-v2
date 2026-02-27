@@ -1,9 +1,14 @@
 # Dependencies
 node_modules/
 venv/
+.venv/
 
 # Environment variables
 .env
+.env.local
+
+# Database
+*.db
 
 # Python
 __pycache__/

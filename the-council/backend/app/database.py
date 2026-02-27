@@ -8,10 +8,13 @@ Includes startup guards: retry connection, create tables, verify schema.
 """
 
 import asyncio
+import logging
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -41,7 +44,12 @@ engine = _create_engine()
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 # Expected tables — single source of truth for verification
-REQUIRED_TABLES = {"sessions", "messages", "shared_memory", "insights"}
+REQUIRED_TABLES = {
+    "sessions", "messages", "shared_memory", "insights",
+    "user_profiles", "financial_accounts", "transactions", "portfolio_positions",
+    "plans", "milestones", "study_paths", "study_topics",
+    "products", "orders",
+}
 
 
 async def get_db() -> AsyncSession:
@@ -65,15 +73,15 @@ async def wait_for_db(max_retries: int = 5, base_delay: float = 1.0):
         try:
             async with engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
-            print(f"[OK] Database reachable (attempt {attempt})")
+            logger.info("Database reachable (attempt %d)", attempt)
             return
         except Exception as e:
             if attempt == max_retries:
-                print(f"[FATAL] Database unreachable after {max_retries} attempts: {e}")
+                logger.critical("Database unreachable after %d attempts: %s", max_retries, e)
                 raise
             delay = base_delay * (2 ** (attempt - 1))  # 1s, 2s, 4s, 8s, 16s
-            print(f"[WAIT] DB not ready (attempt {attempt}/{max_retries}): {e}")
-            print(f"       Retrying in {delay:.0f}s...")
+            logger.warning("DB not ready (attempt %d/%d): %s", attempt, max_retries, e)
+            logger.info("Retrying in %.0fs...", delay)
             await asyncio.sleep(delay)
 
 

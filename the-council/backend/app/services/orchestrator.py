@@ -19,6 +19,8 @@ from app.models import Session, Message
 from app.agents.registry import AgentConfig, get_agent, get_all_agents, AGENTS
 from app.agents.prompts import build_debate_prompt, build_followup_prompt
 from app.services.ai import get_ai_service
+from app.services.profile import ProfileService
+from app.services.memory import MemoryService
 
 
 class WarRoomOrchestrator:
@@ -27,6 +29,8 @@ class WarRoomOrchestrator:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.ai = get_ai_service()
+        self.profile_service = ProfileService(db)
+        self.memory_service = MemoryService(db)
 
     async def start_debate(
         self,
@@ -91,11 +95,18 @@ class WarRoomOrchestrator:
         })
 
         # Step 4: Stream each agent's response
+        # Fetch dynamic dossier and shared memory
+        dossier = await self.profile_service.to_dossier_string()
+        memory_context = await self.memory_service.recall_for_prompt()
+
         prior_messages: list[dict] = []
 
         for agent in agents:
             # Build prompt with context of prior responses
-            system_prompt = build_debate_prompt(agent, question, prior_messages)
+            system_prompt = build_debate_prompt(
+                agent, question, prior_messages,
+                dossier=dossier, memory_context=memory_context,
+            )
 
             # Emit agent start
             yield self._sse("agent_start", {
@@ -199,13 +210,21 @@ class WarRoomOrchestrator:
         else:
             responding_agents = [get_agent(name) for name in session.agents if get_agent(name)]
 
-        # Stream responses
+        # Fetch dynamic dossier and shared memory
+        dossier = await self.profile_service.to_dossier_string()
+        memory_context = await self.memory_service.recall_for_prompt()
+
+        # Stream responses — track this round's responses so each agent sees
+        # what prior agents in the same round have said (mirrors start_debate behaviour)
         prior_messages = []
         for agent in responding_agents:
             if agent is None:
                 continue
 
-            system_prompt = build_followup_prompt(agent, session.topic)
+            system_prompt = build_followup_prompt(
+                agent, session.topic, prior_messages,
+                dossier=dossier, memory_context=memory_context,
+            )
 
             yield self._sse("agent_start", {
                 "agent": agent.name,

@@ -4,13 +4,26 @@ The Council: Multi-Agent AI Advisory Platform
 FastAPI backend with SSE streaming, PostgreSQL, and direct Anthropic SDK.
 """
 
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
+from app.logging_config import configure_logging
 from app.database import init_db, close_db, wait_for_db, verify_tables
 from app.routes.war_room import router as war_room_router
 from app.routes.private_desk import router as private_desk_router
+from app.routes.insights import router as insights_router
+from app.routes.profile import router as profile_router
+from app.routes.financial import router as financial_router
+from app.routes.plans import router as plans_router
+from app.routes.academy import router as academy_router
+from app.routes.workshop import router as workshop_router
+from app.routes.content import router as content_router
+from app.routes.business import router as business_router
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 # Track readiness for health check
 _ready = False
@@ -23,14 +36,14 @@ async def lifespan(app: FastAPI):
 
     settings = get_settings()
     db_host = settings.database_url.split("@")[-1] if "@" in settings.database_url else "local"
-    print(f"[BOOT] Database target: {db_host}")
+    logger.info("Database target: %s", db_host)
 
     # 1. Wait for DB to be reachable (handles Railway cold-start race)
     await wait_for_db()
 
     # 2. Create all tables (idempotent — no-op if they already exist)
     await init_db()
-    print("[OK] Database schema applied")
+    logger.info("Database schema applied")
 
     # 3. Verify every required table actually exists
     missing = await verify_tables()
@@ -40,18 +53,18 @@ async def lifespan(app: FastAPI):
             f"Check that all models are imported in models.py and that "
             f"models.py imports Base from database.py."
         )
-    print(f"[OK] All tables verified: sessions, messages, shared_memory, insights")
+    logger.info("All tables verified")
 
     # 4. Verify agent registry loads (catches import / config errors)
     from app.agents.registry import get_all_agents
     agents = get_all_agents()
     if not agents:
         raise RuntimeError("FATAL: Agent registry returned 0 agents")
-    print(f"[OK] {len(agents)} agents loaded")
+    logger.info("%d agents loaded", len(agents))
 
     # 5. Mark ready
     _ready = True
-    print("The Council is ready.")
+    logger.info("The Council is ready.")
 
     yield
 
@@ -80,6 +93,14 @@ app.add_middleware(
 # Routes
 app.include_router(war_room_router)
 app.include_router(private_desk_router)
+app.include_router(insights_router)
+app.include_router(profile_router)
+app.include_router(financial_router)
+app.include_router(plans_router)
+app.include_router(academy_router)
+app.include_router(workshop_router)
+app.include_router(content_router)
+app.include_router(business_router)
 
 
 @app.get("/api/health")
