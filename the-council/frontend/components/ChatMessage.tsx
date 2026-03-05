@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ChatMessage as MessageType } from "@/lib/types";
 
@@ -7,8 +8,14 @@ interface ChatMessageProps {
   message: MessageType;
 }
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.sender_type === "user";
+
+  // Memoize markdown parsing — expensive during streaming (1000+ renders per response)
+  const renderedContent = useMemo(
+    () => <ReactMarkdown>{message.content}</ReactMarkdown>,
+    [message.content]
+  );
 
   if (isUser) {
     return (
@@ -63,7 +70,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           }}
         >
           <div className="text-sm leading-relaxed text-gray-800 council-markdown">
-            <ReactMarkdown>{message.content}</ReactMarkdown>
+            {renderedContent}
             {message.isStreaming && (
               <span className="inline-block w-0.5 h-4 bg-gray-400 ml-0.5 animate-pulse" />
             )}
@@ -73,3 +80,12 @@ export default function ChatMessage({ message }: ChatMessageProps) {
     </div>
   );
 }
+
+// Custom comparator: skip re-render if only isStreaming changed without content change
+export default memo(ChatMessage, (prev, next) => {
+  return (
+    prev.message.content === next.message.content &&
+    prev.message.isStreaming === next.message.isStreaming &&
+    prev.message.color === next.message.color
+  );
+});

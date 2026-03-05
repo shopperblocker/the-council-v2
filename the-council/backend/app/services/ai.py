@@ -125,11 +125,16 @@ class AIService:
                     yield {"type": "tool_call", "tool": block.name}
 
                     # Run tool off the event loop — yfinance/urllib are synchronous
-                    # and would freeze SSE delivery if called directly
+                    # and would freeze SSE delivery if called directly.
+                    # 15s timeout prevents hung tools from blocking the stream.
                     tool_input = dict(block.input)
-                    result = await asyncio.to_thread(
-                        _run_sync_tool, block.name, tool_input
-                    )
+                    try:
+                        result = await asyncio.wait_for(
+                            asyncio.to_thread(_run_sync_tool, block.name, tool_input),
+                            timeout=15.0,
+                        )
+                    except asyncio.TimeoutError:
+                        result = f"Tool '{block.name}' timed out after 15 seconds."
 
                     tool_results.append({
                         "type": "tool_result",

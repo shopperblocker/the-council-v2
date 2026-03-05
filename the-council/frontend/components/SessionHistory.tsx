@@ -13,22 +13,25 @@ interface SessionHistoryProps {
 export default function SessionHistory({ currentSessionId, onSelectSession }: SessionHistoryProps) {
   const [sessions, setSessions] = useState<PrivateDeskSession[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  const loadSessions = async () => {
-    setLoading(true);
-    try {
-      const data = await fetchPrivateDeskSessions();
-      setSessions(data);
-    } catch {
-      // Silently fail — history is not critical
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadSessions();
+    // AbortController cancels stale in-flight requests when currentSessionId changes
+    const abortCtrl = new AbortController();
+    setLoading(true);
+
+    fetchPrivateDeskSessions()
+      .then((data) => {
+        if (!abortCtrl.signal.aborted) setSessions(data);
+      })
+      .catch(() => {
+        // Silently fail — history is not critical
+      })
+      .finally(() => {
+        if (!abortCtrl.signal.aborted) setLoading(false);
+      });
+
+    return () => abortCtrl.abort();
   }, [currentSessionId]); // Refresh when a new session is created
 
   const formatDate = (dateStr: string) => {

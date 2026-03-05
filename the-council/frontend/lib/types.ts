@@ -79,6 +79,11 @@ export interface RoundEndEvent {
   session_id: string;
   round?: number;
   message_count: number;
+  has_synthesis?: boolean;
+}
+
+export interface SynthesisEvent {
+  content: string;
 }
 
 export interface ConversationStartEvent {

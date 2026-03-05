@@ -6,16 +6,28 @@ between Kyle and one chosen advisor. Supports tool use and session continuity.
 """
 
 import json
+import logging
 import uuid
 from typing import AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
+
+
+def _sse(event: str, data: dict) -> str:
+    """Format a Server-Sent Event with safe newline escaping."""
+    json_str = json.dumps(data).replace("\n", "\\n")
+    return f"event: {event}\ndata: {json_str}\n\n"
 
 from app.agents.registry import AGENTS
 from app.agents.prompts import build_private_desk_prompt
 from app.models import Session, Message
 from app.services.ai import get_ai_service
 from app.services.tools import TOOL_DEFINITIONS
+from app.services.profile import ProfileService
+from app.services.memory import MemoryService
+from app.services.insights import InsightService
 
 
 class PrivateDeskOrchestrator:
@@ -38,7 +50,7 @@ class PrivateDeskOrchestrator:
         # Validate agent exists
         agent = AGENTS.get(agent_name)
         if not agent:
-            yield f"event: error\ndata: {json.dumps({'message': f'Agent {agent_name} not found'})}\n\n"
+            yield _sse("error", {"message": f"Agent {agent_name} not found"})
             return
 
         # Create session
@@ -58,22 +70,34 @@ class PrivateDeskOrchestrator:
             content=message,
         )
         db.add(user_msg)
-        await db.commit()  # Commit before streaming — follow-ups must find this session
+        await db.flush()
 
         # Emit conversation_start event
-        start_data = {
+        yield _sse("conversation_start", {
             "session_id": str(session.id),
             "agent": agent_name,
             "display_name": agent.display_name,
             "emoji": agent.emoji,
             "color": agent.color,
             "role": agent.role,
-        }
-        yield f"event: conversation_start\ndata: {json.dumps(start_data)}\n\n"
+        })
+
+        # Fetch dynamic dossier and shared memory
+        profile_service = ProfileService(db)
+        memory_service = MemoryService(db)
+        insight_service = InsightService(db)
+
+        dossier = await profile_service.to_dossier_string()
+        memory_context = await memory_service.recall_for_prompt()
+        accountability = await memory_service.get_accountability_context()
 
         # Build conversation history for the AI
         ai_messages = [{"role": "user", "content": message}]
-        system_prompt = build_private_desk_prompt(agent)
+        system_prompt = build_private_desk_prompt(
+            agent,
+            dossier=dossier,
+            memory_context=memory_context + ("\n" + accountability if accountability else ""),
+        )
 
         # Stream the response
         full_response = ""
@@ -88,10 +112,10 @@ class PrivateDeskOrchestrator:
                 temperature=agent.temperature,
             ):
                 if chunk["type"] == "tool_call":
-                    yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
+                    yield _sse("tool_call", {"tool": chunk["tool"]})
                 elif chunk["type"] == "token":
                     full_response += chunk["text"]
-                    yield f"event: agent_token\ndata: {json.dumps({'agent': agent_name, 'token': chunk['text']})}\n\n"
+                    yield _sse("agent_token", {"agent": agent_name, "token": chunk["text"]})
 
             # Save agent's response
             agent_msg = Message(
@@ -101,20 +125,25 @@ class PrivateDeskOrchestrator:
                 content=full_response,
             )
             db.add(agent_msg)
-            await db.commit()  # Persist agent response
+            await db.flush()
+
+            # Extract memories and generate insights (fire-and-forget within this transaction)
+            await memory_service.extract_and_store(agent_name, full_response, message, session.id)
+            await insight_service.generate_insight(agent_name, message, full_response)
+
+            await db.commit()
 
         except Exception as e:
             await db.rollback()
-            print(f"[ERROR] Private Desk conversation failed: {e}")
-            yield f"event: error\ndata: {json.dumps({'message': f'Conversation failed: {str(e)}'})}\n\n"
+            logger.error("Private Desk conversation failed: %s", e, exc_info=True)
+            yield _sse("error", {"message": f"Conversation failed: {str(e)}"})
 
         # Emit done event (user message + agent response = 2 for first exchange)
-        done_data = {
+        yield _sse("conversation_end", {
             "session_id": str(session.id),
             "agent": agent_name,
-            "message_count": 2,  # Always 2 for start_conversation (1 user + 1 agent)
-        }
-        yield f"event: conversation_end\ndata: {json.dumps(done_data)}\n\n"
+            "message_count": 2,
+        })
 
     async def continue_conversation(
         self,
@@ -132,13 +161,17 @@ class PrivateDeskOrchestrator:
         result = await db.execute(select(Session).where(Session.id == session_id))
         session = result.scalar_one_or_none()
         if not session:
-            yield f"event: error\ndata: {json.dumps({'message': 'Session not found'})}\n\n"
+            yield _sse("error", {"message": "Session not found"})
             return
 
-        agent_name = session.agents[0] if session.agents else None
+        if not session.agents:
+            yield _sse("error", {"message": "Session has no agents"})
+            return
+
+        agent_name = session.agents[0]
         agent = AGENTS.get(agent_name)
         if not agent:
-            yield f"event: error\ndata: {json.dumps({'message': f'Agent {agent_name} not found'})}\n\n"
+            yield _sse("error", {"message": f"Unknown agent: {agent_name}"})
             return
 
         # Load full message history
@@ -159,6 +192,15 @@ class PrivateDeskOrchestrator:
         db.add(user_msg)
         await db.commit()  # Persist before streaming
 
+        # Fetch dynamic dossier and shared memory
+        profile_service = ProfileService(db)
+        memory_service = MemoryService(db)
+        insight_service = InsightService(db)
+
+        dossier = await profile_service.to_dossier_string()
+        memory_context = await memory_service.recall_for_prompt()
+        accountability = await memory_service.get_accountability_context()
+
         # Build AI message history (convert DB records to Anthropic format)
         ai_messages = []
         for msg in history:
@@ -166,10 +208,19 @@ class PrivateDeskOrchestrator:
             ai_messages.append({"role": role, "content": msg.content})
         ai_messages.append({"role": "user", "content": message})
 
-        system_prompt = build_private_desk_prompt(agent)
+        system_prompt = build_private_desk_prompt(
+            agent,
+            dossier=dossier,
+            memory_context=memory_context + ("\n" + accountability if accountability else ""),
+        )
 
         # Emit agent_start
-        yield f"event: agent_start\ndata: {json.dumps({'agent': agent_name, 'display_name': agent.display_name, 'emoji': agent.emoji, 'color': agent.color})}\n\n"
+        yield _sse("agent_start", {
+            "agent": agent_name,
+            "display_name": agent.display_name,
+            "emoji": agent.emoji,
+            "color": agent.color,
+        })
 
         # Stream response
         full_response = ""
@@ -184,10 +235,10 @@ class PrivateDeskOrchestrator:
                 temperature=agent.temperature,
             ):
                 if chunk["type"] == "tool_call":
-                    yield f"event: tool_call\ndata: {json.dumps({'tool': chunk['tool']})}\n\n"
+                    yield _sse("tool_call", {"tool": chunk["tool"]})
                 elif chunk["type"] == "token":
                     full_response += chunk["text"]
-                    yield f"event: agent_token\ndata: {json.dumps({'agent': agent_name, 'token': chunk['text']})}\n\n"
+                    yield _sse("agent_token", {"agent": agent_name, "token": chunk["text"]})
 
             # Save agent's response
             agent_msg = Message(
@@ -197,16 +248,26 @@ class PrivateDeskOrchestrator:
                 content=full_response,
             )
             db.add(agent_msg)
-            await db.commit()  # Persist agent response
+            await db.flush()
+
+            # Extract memories and generate insights
+            await memory_service.extract_and_store(agent_name, full_response, message, session_id)
+            await insight_service.generate_insight(agent_name, message, full_response)
+
+            await db.commit()
 
         except Exception as e:
             await db.rollback()
-            print(f"[ERROR] Private Desk follow-up failed: {e}")
-            yield f"event: error\ndata: {json.dumps({'message': f'Conversation failed: {str(e)}'})}\n\n"
+            logger.error("Private Desk follow-up failed: %s", e, exc_info=True)
+            yield _sse("error", {"message": f"Conversation failed: {str(e)}"})
 
         # Count total messages
         total = len(history) + 2  # +2 for the new user msg and this response
-        yield f"event: conversation_end\ndata: {json.dumps({'session_id': str(session_id), 'agent': agent_name, 'message_count': total})}\n\n"
+        yield _sse("conversation_end", {
+            "session_id": str(session_id),
+            "agent": agent_name,
+            "message_count": total,
+        })
 
 
 # Singleton

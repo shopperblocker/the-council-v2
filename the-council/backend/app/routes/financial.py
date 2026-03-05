@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, delete
 
 from app.database import get_db
 from app.models import FinancialAccount, Transaction, PortfolioPosition, UserProfile
@@ -195,7 +195,7 @@ async def delete_account(account_id: int, db: AsyncSession = Depends(get_db)):
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    await db.delete(account)
+    await db.execute(delete(FinancialAccount).where(FinancialAccount.id == account_id))
     await db.flush()
     return {"deleted": True, "id": account_id}
 
@@ -264,7 +264,7 @@ async def delete_transaction(transaction_id: int, db: AsyncSession = Depends(get
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    await db.delete(transaction)
+    await db.execute(delete(Transaction).where(Transaction.id == transaction_id))
     await db.flush()
     return {"deleted": True, "id": transaction_id}
 
@@ -304,6 +304,6 @@ async def remove_position(position_id: int, db: AsyncSession = Depends(get_db)):
     if not position:
         raise HTTPException(status_code=404, detail="Position not found")
 
-    await db.delete(position)
+    await db.execute(delete(PortfolioPosition).where(PortfolioPosition.id == position_id))
     await db.flush()
     return {"deleted": True, "id": position_id}

@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
-import { fetchPlans, createPlan, createMilestone, toggleMilestone, startGenericStream } from "@/lib/api";
+import ErrorBanner from "@/components/ErrorBanner";
+import { fetchPlans, createPlan, createMilestone, toggleMilestone, startGenericStream, isTokenEvent } from "@/lib/api";
 import type { Plan } from "@/lib/types";
 
 const CATEGORIES = ["business", "academic", "health", "financial", "personal"];
@@ -16,8 +17,9 @@ export default function PlansHubPage() {
   const [newMilestone, setNewMilestone] = useState("");
   const [review, setReview] = useState("");
   const [reviewing, setReviewing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const reload = () => fetchPlans().then(setPlans).catch(() => {});
+  const reload = () => fetchPlans().then(setPlans).catch(() => setError("Failed to load plans. Is the backend running?"));
   useEffect(() => { reload(); }, []);
 
   const handleCreatePlan = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -59,7 +61,7 @@ export default function PlansHubPage() {
       `/plans/${plan.id}/review`,
       {},
       {
-        onAgentToken: (data) => setReview((prev) => prev + (data as { token: string }).token),
+        onAgentToken: (data) => { if (isTokenEvent(data)) setReview((prev) => prev + data.token); },
         onRoundEnd: () => setReviewing(false),
         onError: () => setReviewing(false),
       }
@@ -80,6 +82,8 @@ export default function PlansHubPage() {
           </div>
           <button onClick={() => setShowAdd(!showAdd)} className="btn-primary px-4 py-2 text-sm">+ New Plan</button>
         </div>
+
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
         {/* Add Plan Form */}
         {showAdd && (

@@ -3,7 +3,7 @@ Private Desk Routes: 1-on-1 advisory session endpoints.
 """
 
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
@@ -148,7 +148,7 @@ async def get_session(
 
 @router.get("/sessions")
 async def list_sessions(
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> list[SessionOut]:
     """List recent Private Desk sessions (most recent first)."""

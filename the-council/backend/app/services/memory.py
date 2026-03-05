@@ -72,6 +72,35 @@ class MemoryService:
 
         return "### SHARED MEMORY\nFacts remembered from prior sessions:\n" + "\n".join(lines)
 
+    async def get_accountability_context(self, days: int = 14) -> str:
+        """
+        Return a formatted string of recent commitments Kyle made to his advisors.
+
+        Injected into agent prompts so advisors can follow up on what Kyle
+        said he would do. Only pulls 'commitment' category memories from
+        the last `days` days.
+        """
+        from datetime import datetime, timezone, timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        result = await self.db.execute(
+            select(SharedMemory)
+            .where(SharedMemory.category == "commitment")
+            .where(SharedMemory.created_at >= cutoff)
+            .order_by(SharedMemory.created_at.desc())
+            .limit(10)
+        )
+        commitments = list(result.scalars().all())
+        if not commitments:
+            return ""
+
+        lines = [f"- {m.key}: {m.value} (advised by {m.source_agent})" for m in commitments]
+        return (
+            "### ACCOUNTABILITY\n"
+            "Kyle made these commitments in recent sessions. "
+            "If relevant, check in on them — hold him to what he said he'd do:\n"
+            + "\n".join(lines)
+        )
+
     async def extract_and_store(
         self,
         agent_name: str,
@@ -83,7 +112,7 @@ class MemoryService:
         ai = get_ai_service()
 
         prompt = f"""Extract key facts worth remembering from this conversation turn.
-Only extract CONCRETE, SPECIFIC facts about Kyle (decisions, numbers, deadlines, preferences).
+Only extract CONCRETE, SPECIFIC facts about Kyle (decisions, numbers, deadlines, preferences, commitments).
 Do NOT extract opinions, general advice, or vague statements.
 
 USER said: {user_message}
@@ -92,7 +121,8 @@ AGENT ({agent_name}) responded: {agent_response[:500]}
 If there are facts worth remembering, respond with a JSON array like:
 [{{"category": "financial", "key": "tuition_saved", "value": "$5000 saved so far"}}]
 
-Categories: financial, business, academic, personal, health, goals, decisions
+Categories: financial, business, academic, personal, health, goals, decisions, commitment
+Use "commitment" for any specific action Kyle says he will take or agrees to do.
 
 If nothing worth remembering, respond with: []"""
 

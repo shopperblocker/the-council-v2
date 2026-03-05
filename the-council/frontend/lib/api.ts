@@ -11,6 +11,7 @@ import type {
   AgentTokenEvent,
   AgentEndEvent,
   RoundEndEvent,
+  SynthesisEvent,
   ConversationStartEvent,
   ConversationEndEvent,
   PrivateDeskSession,
@@ -23,6 +24,21 @@ import type {
   BusinessOrder,
   Insight,
 } from "./types";
+
+// ── Type Guards ──
+
+/**
+ * Type guard for SSE agent_token events.
+ * Avoids unsafe `as { token: string }` casts in page components.
+ */
+export function isTokenEvent(data: unknown): data is { token: string } {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "token" in data &&
+    typeof (data as Record<string, unknown>).token === "string"
+  );
+}
 
 // API base uses a relative path by default so all requests go through the
 // Next.js rewrite proxy (next.config.mjs), which forwards /api/* to the
@@ -210,6 +226,21 @@ export async function fetchInsights(): Promise<Insight[]> {
   return res.json();
 }
 
+export async function fetchUnreadInsightsCount(): Promise<number> {
+  const res = await fetch(`${API_BASE}/insights/unread`);
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.count ?? 0;
+}
+
+export async function markInsightViewed(id: number): Promise<void> {
+  await fetch(`${API_BASE}/insights/${id}/viewed`, { method: "POST" });
+}
+
+export async function markInsightActedOn(id: number): Promise<void> {
+  await fetch(`${API_BASE}/insights/${id}/acted`, { method: "POST" });
+}
+
 // ── Generic SSE Stream for AI-powered endpoints ──
 
 export function startGenericStream(
@@ -297,6 +328,7 @@ interface SSECallbacks {
   onAgentToken?: (data: AgentTokenEvent) => void;
   onAgentEnd?: (data: AgentEndEvent) => void;
   onRoundEnd?: (data: RoundEndEvent) => void;
+  onSynthesis?: (data: SynthesisEvent) => void;
   onError?: (data: { message: string }) => void;
 }
 
@@ -307,6 +339,7 @@ function sseHandlers(callbacks: SSECallbacks): Record<string, (data: unknown) =>
     agent_token: (d) => callbacks.onAgentToken?.(d as AgentTokenEvent),
     agent_end: (d) => callbacks.onAgentEnd?.(d as AgentEndEvent),
     round_end: (d) => callbacks.onRoundEnd?.(d as RoundEndEvent),
+    synthesis: (d) => callbacks.onSynthesis?.(d as SynthesisEvent),
     error: (d) => callbacks.onError?.(d as { message: string }),
   };
 }

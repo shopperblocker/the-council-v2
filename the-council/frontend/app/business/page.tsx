@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
-import { fetchProducts, createProduct, fetchOrders, startGenericStream } from "@/lib/api";
+import ErrorBanner from "@/components/ErrorBanner";
+import { fetchProducts, createProduct, fetchOrders, startGenericStream, isTokenEvent } from "@/lib/api";
 import type { Product, BusinessOrder } from "@/lib/types";
 
 type Tab = "deals" | "orders" | "tools";
@@ -18,10 +19,11 @@ export default function BusinessPage() {
   const [streaming, setStreaming] = useState(false);
   const [aiTool, setAiTool] = useState<string | null>(null);
   const [aiInput, setAiInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchProducts().then(setProducts).catch(() => {});
-    fetchOrders().then(setOrders).catch(() => {});
+    fetchProducts().then(setProducts).catch(() => setError("Failed to load products. Is the backend running?"));
+    fetchOrders().then(setOrders).catch(() => setError("Failed to load orders."));
   }, []);
 
   const handleAddProduct = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -63,7 +65,7 @@ export default function BusinessPage() {
       `/business/${tool}`,
       body,
       {
-        onAgentToken: (data) => setAiResponse((prev) => prev + (data as { token: string }).token),
+        onAgentToken: (data) => { if (isTokenEvent(data)) setAiResponse((prev) => prev + data.token); },
         onRoundEnd: () => setStreaming(false),
         onError: () => setStreaming(false),
       }
@@ -83,6 +85,8 @@ export default function BusinessPage() {
           <button onClick={() => router.push("/dashboard")} className="text-gray-400 hover:text-gray-700 text-sm">&larr; Back</button>
           <h1 className="text-xl sm:text-2xl font-bold">Business Engine</h1>
         </div>
+
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
         {/* Summary */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
@@ -197,16 +201,16 @@ export default function BusinessPage() {
           <GlassPanel className="p-4 sm:p-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
               {[
-                { key: "analyze-deal", label: "Analyze Deal", emoji: "&#128200;" },
-                { key: "listing-copy", label: "Listing Copy", emoji: "&#128221;" },
-                { key: "find-buyers", label: "Find Buyers", emoji: "&#128269;" },
+                { key: "analyze-deal", label: "Analyze Deal", emoji: "📈" },
+                { key: "listing-copy", label: "Listing Copy", emoji: "📝" },
+                { key: "find-buyers", label: "Find Buyers", emoji: "🔍" },
               ].map((t) => (
                 <button
                   key={t.key}
                   onClick={() => { setAiTool(t.key); setAiResponse(""); }}
                 >
                   <GlassPanel className={`p-3 text-center ${aiTool === t.key ? "ring-2 ring-orange-400" : "hover:-translate-y-0.5"} transition-all`}>
-                    <span dangerouslySetInnerHTML={{ __html: t.emoji }} /> {t.label}
+                    <span>{t.emoji}</span> {t.label}
                   </GlassPanel>
                 </button>
               ))}

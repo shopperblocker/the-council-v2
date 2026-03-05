@@ -25,6 +25,8 @@ from app.routes.business import router as business_router
 configure_logging()
 logger = logging.getLogger(__name__)
 
+from app.middleware.auth import ApiKeyMiddleware
+
 # Track readiness for health check
 _ready = False
 
@@ -62,7 +64,11 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("FATAL: Agent registry returned 0 agents")
     logger.info("%d agents loaded", len(agents))
 
-    # 5. Mark ready
+    # 5. Validate Anthropic API key is set
+    if not settings.anthropic_api_key:
+        logger.warning("ANTHROPIC_API_KEY is not set — all AI calls will fail")
+
+    # 6. Mark ready
     _ready = True
     logger.info("The Council is ready.")
 
@@ -90,6 +96,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Optional API key auth — only active when API_KEY is set in environment
+if settings.api_key:
+    app.add_middleware(ApiKeyMiddleware, api_key=settings.api_key)
+    logger.info("API key authentication enabled")
 
 # Routes
 app.include_router(war_room_router)

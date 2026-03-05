@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
-import { fetchStudyPaths, createStudyPath, startGenericStream } from "@/lib/api";
+import ErrorBanner from "@/components/ErrorBanner";
+import { fetchStudyPaths, createStudyPath, startGenericStream, isTokenEvent } from "@/lib/api";
 import type { StudyPath } from "@/lib/types";
 
 type Mode = "paths" | "explain" | "question" | "quiz";
@@ -23,9 +24,10 @@ export default function AcademyPage() {
   const [input, setInput] = useState("");
   const [response, setResponse] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchStudyPaths().then(setPaths).catch(() => {});
+    fetchStudyPaths().then(setPaths).catch(() => setError("Failed to load study paths. Is the backend running?"));
   }, []);
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -48,7 +50,7 @@ export default function AcademyPage() {
       `/academy/${endpoint}`,
       { concept: input, topic: input, difficulty: "intermediate" },
       {
-        onAgentToken: (data) => setResponse((prev) => prev + (data as { token: string }).token),
+        onAgentToken: (data) => { if (isTokenEvent(data)) setResponse((prev) => prev + data.token); },
         onRoundEnd: () => setStreaming(false),
         onError: () => setStreaming(false),
       }
@@ -56,10 +58,10 @@ export default function AcademyPage() {
   };
 
   const modes: { key: Mode; label: string; emoji: string; description: string }[] = [
-    { key: "paths", label: "Study Paths", emoji: "&#128218;", description: "Track your learning" },
-    { key: "explain", label: "Feynman Explains", emoji: "&#9883;&#65039;", description: "Simple explanations" },
-    { key: "question", label: "Socrates Questions", emoji: "&#129450;", description: "Challenge understanding" },
-    { key: "quiz", label: "Quiz Me", emoji: "&#129504;", description: "Test your knowledge" },
+    { key: "paths", label: "Study Paths", emoji: "📚", description: "Track your learning" },
+    { key: "explain", label: "Feynman Explains", emoji: "⚛️", description: "Simple explanations" },
+    { key: "question", label: "Socrates Questions", emoji: "🦉", description: "Challenge understanding" },
+    { key: "quiz", label: "Quiz Me", emoji: "🧠", description: "Test your knowledge" },
   ];
 
   return (
@@ -71,12 +73,14 @@ export default function AcademyPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Academy</h1>
         </div>
 
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
+
         {/* Mode Selector */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6">
           {modes.map((m) => (
             <button key={m.key} onClick={() => setMode(m.key)}>
               <GlassPanel className={`p-3 sm:p-4 text-center transition-all ${mode === m.key ? "ring-2 ring-amber-400" : "hover:-translate-y-0.5"}`}>
-                <p className="text-xl sm:text-2xl mb-1" dangerouslySetInnerHTML={{ __html: m.emoji }} />
+                <p className="text-xl sm:text-2xl mb-1">{m.emoji}</p>
                 <p className="text-xs sm:text-sm font-semibold text-gray-900">{m.label}</p>
                 <p className="text-[10px] text-gray-400 hidden sm:block">{m.description}</p>
               </GlassPanel>

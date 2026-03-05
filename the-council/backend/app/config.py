@@ -5,11 +5,18 @@ Configuration: Environment-based settings for The Council.
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 from functools import lru_cache
+from typing import Optional
 
 
 class Settings(BaseSettings):
     # API
     anthropic_api_key: str
+
+    # Optional static API key for middleware auth (set API_KEY= in .env to enable)
+    api_key: Optional[str] = None
+
+    # Optional Tavily API key for live web search (https://tavily.com — free tier: 1000/mo)
+    tavily_api_key: Optional[str] = None
 
     # Database — SQLite for local dev, PostgreSQL for production
     database_url: str = "sqlite+aiosqlite:///./council.db"

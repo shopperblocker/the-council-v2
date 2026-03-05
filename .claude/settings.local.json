@@ -31,7 +31,8 @@
       "Bash(cd:*)",
       "Bash(netstat:*)",
       "Bash(cmd:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(gh run:*)"
     ]
   }
 }

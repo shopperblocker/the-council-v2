@@ -1,18 +1,26 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
 import ChatMessage from "@/components/ChatMessage";
 import AgentCard from "@/components/AgentCard";
 import MobileDrawer from "@/components/MobileDrawer";
-import { fetchAgents, startDebateStream, sendFollowUpStream } from "@/lib/api";
+import {
+  fetchAgents,
+  startDebateStream,
+  sendFollowUpStream,
+  fetchUnreadInsightsCount,
+} from "@/lib/api";
 import type { Agent, ChatMessage as MessageType, DebateStartEvent } from "@/lib/types";
 
 export default function WarRoom() {
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Token accumulator for batched streaming updates (~60fps cap)
+  const pendingTokens = useRef<Map<string, string>>(new Map());
+  const rafId = useRef<number | null>(null);
 
   // State
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -25,18 +33,23 @@ export default function WarRoom() {
   const [topic, setTopic] = useState<string | null>(null);
   const [streamController, setStreamController] = useState<AbortController | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [synthesis, setSynthesis] = useState<string | null>(null);
+  const [unreadInsights, setUnreadInsights] = useState(0);
 
-  // Load agents on mount
+  // Load agents and unread insights count on mount
   useEffect(() => {
     fetchAgents()
       .then(setAgents)
       .catch((err) => console.error("Failed to load agents:", err));
+    fetchUnreadInsightsCount()
+      .then(setUnreadInsights)
+      .catch(() => {});
   }, []);
 
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, synthesis]);
 
   // Toggle agent selection
   const toggleAgent = useCallback((name: string) => {
@@ -57,6 +70,7 @@ export default function WarRoom() {
     setInput("");
     setIsDebating(true);
     setSidebarOpen(false);
+    setSynthesis(null);
 
     // Add user message
     const userMsg: MessageType = {
@@ -95,16 +109,30 @@ export default function WarRoom() {
       },
 
       onAgentToken: (data: { agent: string; token: string }) => {
-        setMessages((prev) => {
-          const updated = [...prev];
-          for (let i = updated.length - 1; i >= 0; i--) {
-            if (updated[i].sender === data.agent && updated[i].isStreaming) {
-              updated[i] = { ...updated[i], content: updated[i].content + data.token };
-              break;
-            }
-          }
-          return updated;
-        });
+        // Accumulate tokens for this agent
+        const prev = pendingTokens.current.get(data.agent) ?? "";
+        pendingTokens.current.set(data.agent, prev + data.token);
+
+        // Flush accumulated tokens on next animation frame (max ~60fps)
+        if (rafId.current === null) {
+          rafId.current = requestAnimationFrame(() => {
+            rafId.current = null;
+            const batch = new Map(pendingTokens.current);
+            pendingTokens.current.clear();
+            setMessages((msgs) => {
+              const updated = [...msgs];
+              for (const [agent, tokens] of batch) {
+                for (let i = updated.length - 1; i >= 0; i--) {
+                  if (updated[i].sender === agent && updated[i].isStreaming) {
+                    updated[i] = { ...updated[i], content: updated[i].content + tokens };
+                    break;
+                  }
+                }
+              }
+              return updated;
+            });
+          });
+        }
       },
 
       onAgentEnd: (data: { agent: string }) => {
@@ -118,10 +146,16 @@ export default function WarRoom() {
         );
       },
 
+      onSynthesis: (data: { content: string }) => {
+        setSynthesis(data.content.replace(/\\n/g, "\n"));
+      },
+
       onRoundEnd: (data: { session_id: string }) => {
         setSessionId(data.session_id);
         setIsDebating(false);
         setTimeout(() => inputRef.current?.focus(), 100);
+        // Refresh insights badge after a debate completes
+        fetchUnreadInsightsCount().then(setUnreadInsights).catch(() => {});
       },
 
       onError: (data: { message: string }) => {
@@ -167,12 +201,22 @@ export default function WarRoom() {
     setIsDebating(false);
     setSpeakingAgent(null);
     setSelectedAgents([]);
+    setSynthesis(null);
     inputRef.current?.focus();
   };
 
-  // Active agents in sidebar
-  const sessionAgents = agents.filter((a) => selectedAgents.includes(a.name));
+  // Active agents in sidebar (memoized to avoid recomputing on every render)
+  const sessionAgents = useMemo(
+    () => agents.filter((a) => selectedAgents.includes(a.name)),
+    [agents, selectedAgents]
+  );
   const hasStarted = messages.length > 0;
+
+  // Memoize the speaking agent lookup used in the typing indicator
+  const speakingAgentInfo = useMemo(
+    () => agents.find((a) => a.name === speakingAgent) ?? null,
+    [agents, speakingAgent]
+  );
 
   // Sidebar content (shared between desktop sidebar and mobile drawer)
   const sidebarContent = (
@@ -257,6 +301,22 @@ export default function WarRoom() {
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
+          {/* Insights badge */}
+          {unreadInsights > 0 && (
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-80"
+              style={{
+                background: "rgba(201,162,39,0.12)",
+                color: "#C9A227",
+                border: "1px solid rgba(201,162,39,0.3)",
+              }}
+              title="Unread insights from your advisors"
+            >
+              <span>&#128161;</span>
+              <span>{unreadInsights} insight{unreadInsights !== 1 ? "s" : ""}</span>
+            </button>
+          )}
           {sessionId && (
             <button
               onClick={handleNewDebate}
@@ -321,6 +381,32 @@ export default function WarRoom() {
                 {messages.map((msg) => (
                   <ChatMessage key={msg.id} message={msg} />
                 ))}
+
+                {/* Synthesis card — shown after debate completes */}
+                {synthesis && !isDebating && (
+                  <div
+                    className="mt-4 p-4 rounded-xl"
+                    style={{
+                      background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(201,162,39,0.06))",
+                      border: "1px solid rgba(124,58,237,0.2)",
+                    }}
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm">&#9876;&#65039;</span>
+                      <span
+                        className="text-[11px] font-bold uppercase tracking-widest"
+                        style={{ color: "#7C3AED" }}
+                      >
+                        Council Synthesis
+                      </span>
+                      <span className="text-[10px] text-gray-400 ml-auto">via Opus</span>
+                    </div>
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                      {synthesis}
+                    </p>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -330,11 +416,14 @@ export default function WarRoom() {
           <GlassPanel className="px-3 sm:px-5 py-3 sm:py-4 shrink-0">
             {/* Typing indicator */}
             <div className="h-5 mb-2">
-              {speakingAgent && (
+              {speakingAgent && speakingAgentInfo && (
                 <p className="text-xs text-gray-400 italic animate-fade-in truncate">
-                  {agents.find((a) => a.name === speakingAgent)?.emoji}{" "}
-                  {agents.find((a) => a.name === speakingAgent)?.display_name} is speaking...
+                  {speakingAgentInfo.emoji}{" "}
+                  {speakingAgentInfo.display_name} is speaking...
                 </p>
+              )}
+              {!speakingAgent && isDebating && (
+                <p className="text-xs text-gray-400 italic">Synthesizing...</p>
               )}
             </div>
 

@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
+import ErrorBanner from "@/components/ErrorBanner";
 import {
   fetchAccounts,
   createAccount,
   fetchTransactions,
   createTransaction,
   startGenericStream,
+  isTokenEvent,
 } from "@/lib/api";
 import type { FinancialAccount, Transaction } from "@/lib/types";
 
@@ -20,10 +22,11 @@ export default function FinancialHQPage() {
   const [showAddTx, setShowAddTx] = useState(false);
   const [analysis, setAnalysis] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAccounts().then(setAccounts).catch(() => {});
-    fetchTransactions().then(setTransactions).catch(() => {});
+    fetchAccounts().then(setAccounts).catch(() => setError("Failed to load accounts. Is the backend running?"));
+    fetchTransactions().then(setTransactions).catch(() => setError("Failed to load transactions."));
   }, []);
 
   const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
@@ -73,7 +76,7 @@ export default function FinancialHQPage() {
       "/financial/analyze",
       { accounts, transactions: transactions.slice(0, 20) },
       {
-        onAgentToken: (data) => setAnalysis((prev) => prev + (data as { token: string }).token),
+        onAgentToken: (data) => { if (isTokenEvent(data)) setAnalysis((prev) => prev + data.token); },
         onRoundEnd: () => setAnalyzing(false),
         onError: () => setAnalyzing(false),
       }
@@ -90,6 +93,8 @@ export default function FinancialHQPage() {
           </button>
           <h1 className="text-xl sm:text-2xl font-bold">Financial HQ</h1>
         </div>
+
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">

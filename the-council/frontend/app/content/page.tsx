@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
-import { startGenericStream } from "@/lib/api";
+import { startGenericStream, isTokenEvent } from "@/lib/api";
 
 type ContentTool = "hooks" | "captions" | "concepts" | "analyze-failures" | "script";
 
@@ -11,7 +11,7 @@ const TOOLS: { key: ContentTool; label: string; emoji: string; description: stri
   {
     key: "hooks",
     label: "Hook Generator",
-    emoji: "&#127907;",
+    emoji: "🎣",
     description: "Generate viral TikTok hooks",
     fields: [
       { name: "niche", placeholder: "Your niche (e.g., AI, business, fitness)" },
@@ -21,7 +21,7 @@ const TOOLS: { key: ContentTool; label: string; emoji: string; description: stri
   {
     key: "captions",
     label: "Caption Writer",
-    emoji: "&#128221;",
+    emoji: "📝",
     description: "Optimized captions with hashtags",
     fields: [
       { name: "content_summary", placeholder: "What is the content about?" },
@@ -31,7 +31,7 @@ const TOOLS: { key: ContentTool; label: string; emoji: string; description: stri
   {
     key: "concepts",
     label: "Concept Lab",
-    emoji: "&#128161;",
+    emoji: "💡",
     description: "Brainstorm video concepts",
     fields: [
       { name: "niche", placeholder: "Your niche" },
@@ -41,7 +41,7 @@ const TOOLS: { key: ContentTool; label: string; emoji: string; description: stri
   {
     key: "analyze-failures",
     label: "Failure Analysis",
-    emoji: "&#128269;",
+    emoji: "🔍",
     description: "Analyze why content failed",
     fields: [
       { name: "content_description", placeholder: "Describe the content that failed" },
@@ -51,7 +51,7 @@ const TOOLS: { key: ContentTool; label: string; emoji: string; description: stri
   {
     key: "script",
     label: "Script Writer",
-    emoji: "&#127916;",
+    emoji: "🎬",
     description: "Full video script with hooks and CTA",
     fields: [
       { name: "topic", placeholder: "Video topic" },
@@ -78,7 +78,7 @@ export default function ContentPage() {
       `/content/${selectedTool}`,
       formData,
       {
-        onAgentToken: (data) => setResponse((prev) => prev + (data as { token: string }).token),
+        onAgentToken: (data) => { if (isTokenEvent(data)) setResponse((prev) => prev + data.token); },
         onRoundEnd: () => setStreaming(false),
         onError: () => setStreaming(false),
       }
@@ -106,7 +106,7 @@ export default function ContentPage() {
               }}
             >
               <GlassPanel className={`p-3 text-center transition-all h-full ${selectedTool === t.key ? "ring-2 ring-pink-400" : "hover:-translate-y-0.5"}`}>
-                <p className="text-xl mb-1" dangerouslySetInnerHTML={{ __html: t.emoji }} />
+                <p className="text-xl mb-1">{t.emoji}</p>
                 <p className="text-[11px] sm:text-xs font-semibold text-gray-900">{t.label}</p>
               </GlassPanel>
             </button>

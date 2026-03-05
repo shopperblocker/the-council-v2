@@ -3,7 +3,7 @@ Tools: Functions the agents can call during conversations.
 
 Calculator is fully functional.
 Stock prices use yfinance with a direct HTTP fallback (Yahoo Finance can block cloud IPs).
-Web search returns curated results; wire SerpAPI or Tavily for live search.
+Web search uses Tavily when TAVILY_API_KEY is set; falls back to curated results otherwise.
 """
 
 import json
@@ -172,9 +172,34 @@ async def _fetch_price_http(ticker: str) -> dict:
     }
 
 
-# ── Web Search (curated; wire Tavily/SerpAPI for live search) ──
+# ── Web Search (Tavily live search with curated fallback) ──
 
-# Finance-related keywords that trigger market-aware responses
+def _get_tavily_key() -> str | None:
+    """Return the Tavily API key from settings, or None if not configured."""
+    try:
+        from app.config import get_settings
+        return get_settings().tavily_api_key
+    except Exception:
+        return None
+
+
+async def _web_search_tavily(query: str, api_key: str) -> str:
+    """Live web search via Tavily API."""
+    from tavily import TavilyClient
+    client = TavilyClient(api_key=api_key)
+    response = client.search(query, max_results=5, search_depth="basic")
+    results = [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("content", ""),
+        }
+        for r in response.get("results", [])
+    ]
+    return json.dumps({"query": query, "results": results})
+
+
+# Finance-related keywords — used for curated fallback when Tavily is not configured
 _FINANCE_KEYWORDS = {
     "stock", "stocks", "market", "invest", "investing", "investment",
     "nasdaq", "nyse", "s&p", "dow", "ticker", "share", "shares",
@@ -182,7 +207,6 @@ _FINANCE_KEYWORDS = {
     "trading", "trade", "etf", "fund", "price", "crypto",
 }
 
-# Major tickers by sector — used in curated finance responses
 _MAJOR_TICKERS = {
     "tech": ["AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN", "TSLA"],
     "finance": ["JPM", "BAC", "GS", "BRK-B", "V", "MA"],
@@ -192,7 +216,7 @@ _MAJOR_TICKERS = {
 }
 
 
-def _web_search_finance(query: str) -> str:
+def _web_search_finance_fallback(query: str) -> str:
     all_tickers = [t for group in _MAJOR_TICKERS.values() for t in group]
     return json.dumps({
         "query": query,
@@ -221,14 +245,14 @@ def _web_search_finance(query: str) -> str:
     })
 
 
-def _web_search_generic(query: str) -> str:
+def _web_search_generic_fallback(query: str) -> str:
     return json.dumps({
         "query": query,
         "results": [
             {
                 "title": f"Search results for: {query}",
                 "snippet": (
-                    "Web search is not yet connected to a live API. "
+                    "Live web search requires a TAVILY_API_KEY in your .env. "
                     "For financial data, use get_stock_price with a ticker symbol. "
                     "For calculations, use the calculator tool."
                 ),
@@ -268,9 +292,15 @@ async def execute_tool(name: str, tool_input: dict) -> str:
 
     elif name == "web_search":
         query = tool_input.get("query", "").strip()
+        tavily_key = _get_tavily_key()
+        if tavily_key:
+            try:
+                return await _web_search_tavily(query, tavily_key)
+            except Exception:
+                pass  # Fall through to curated fallback
         q_lower = query.lower()
         if any(kw in q_lower for kw in _FINANCE_KEYWORDS):
-            return _web_search_finance(query)
-        return _web_search_generic(query)
+            return _web_search_finance_fallback(query)
+        return _web_search_generic_fallback(query)
 
     return json.dumps({"error": f"Unknown tool: {name}"})

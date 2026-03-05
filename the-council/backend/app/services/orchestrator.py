@@ -5,15 +5,19 @@ This is the brain of the War Room. It:
 1. Routes questions to the right agents (via Haiku)
 2. Orchestrates speaking order
 3. Streams each agent's response in real-time
-4. Supports follow-up questions and multi-round debates
-5. Persists everything to PostgreSQL
+4. Persists everything to PostgreSQL
+5. Writes cross-session memories and generates insights after each turn
+6. Synthesizes the full debate at round end using Opus
 """
 
 import json
+import logging
 import uuid
 from typing import AsyncIterator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 from app.models import Session, Message
 from app.agents.registry import AgentConfig, get_agent, get_all_agents, AGENTS
@@ -21,6 +25,7 @@ from app.agents.prompts import build_debate_prompt, build_followup_prompt
 from app.services.ai import get_ai_service
 from app.services.profile import ProfileService
 from app.services.memory import MemoryService
+from app.services.insights import InsightService
 
 
 class WarRoomOrchestrator:
@@ -31,6 +36,7 @@ class WarRoomOrchestrator:
         self.ai = get_ai_service()
         self.profile_service = ProfileService(db)
         self.memory_service = MemoryService(db)
+        self.insight_service = InsightService(db)
 
     async def start_debate(
         self,
@@ -45,6 +51,8 @@ class WarRoomOrchestrator:
         2. Create session
         3. Save user message
         4. Stream each agent's response
+        5. After each agent: extract memories + generate insights
+        6. After round: synthesize with Opus and emit synthesis event
         """
         # Step 1: Select agents
         if not agent_names:
@@ -95,18 +103,21 @@ class WarRoomOrchestrator:
         })
 
         # Step 4: Stream each agent's response
-        # Fetch dynamic dossier and shared memory
+        # Fetch dynamic dossier, shared memory, and accountability context
         dossier = await self.profile_service.to_dossier_string()
         memory_context = await self.memory_service.recall_for_prompt()
+        accountability = await self.memory_service.get_accountability_context()
+        full_memory_context = memory_context + ("\n" + accountability if accountability else "")
 
         prior_messages: list[dict] = []
+        agent_responses: list[dict] = []  # For synthesis
 
         try:
             for agent in agents:
                 # Build prompt with context of prior responses
                 system_prompt = build_debate_prompt(
                     agent, question, prior_messages,
-                    dossier=dossier, memory_context=memory_context,
+                    dossier=dossier, memory_context=full_memory_context,
                 )
 
                 # Emit agent start
@@ -139,27 +150,47 @@ class WarRoomOrchestrator:
                 self.db.add(agent_msg)
                 await self.db.flush()
 
-                # Track for context
+                # Extract memories and generate insights
+                await self.memory_service.extract_and_store(
+                    agent.name, full_response, question, session.id
+                )
+                await self.insight_service.generate_insight(agent.name, question, full_response)
+
+                # Track for context and synthesis
                 prior_messages.append({
                     "sender": agent.display_name,
+                    "content": full_response,
+                })
+                agent_responses.append({
+                    "sender": agent.display_name,
+                    "sender_type": "agent",
                     "content": full_response,
                 })
 
                 # Emit agent end
                 yield self._sse("agent_end", {"agent": agent.name})
 
+            # Step 5: Synthesize with Opus and emit
+            synthesis = ""
+            try:
+                synthesis = await self.ai.synthesize_debate(question, agent_responses)
+                yield self._sse("synthesis", {"content": synthesis})
+            except Exception as e:
+                logger.warning("Synthesis failed: %s", e)
+
             # Emit round end
             yield self._sse("round_end", {
                 "round": 1,
                 "session_id": str(session.id),
                 "message_count": len(prior_messages),
+                "has_synthesis": bool(synthesis),
             })
 
             await self.db.commit()
 
         except Exception as e:
             await self.db.rollback()
-            print(f"[ERROR] War Room debate failed: {e}")
+            logger.error("War Room debate failed: %s", e, exc_info=True)
             yield self._sse("error", {"message": f"Debate failed: {str(e)}"})
             yield self._sse("round_end", {
                 "round": 1,
@@ -216,18 +247,22 @@ class WarRoomOrchestrator:
                 })
 
         # Determine which agents respond
-        if mention and mention in AGENTS:
+        # Validate @mention against the session's own agent list (not global registry)
+        if mention and mention in session.agents:
             responding_agents = [get_agent(mention)]
         else:
             responding_agents = [get_agent(name) for name in session.agents if get_agent(name)]
 
-        # Fetch dynamic dossier and shared memory
+        # Fetch dynamic dossier, shared memory, and accountability context
         dossier = await self.profile_service.to_dossier_string()
         memory_context = await self.memory_service.recall_for_prompt()
+        accountability = await self.memory_service.get_accountability_context()
+        full_memory_context = memory_context + ("\n" + accountability if accountability else "")
 
         # Stream responses — track this round's responses so each agent sees
         # what prior agents in the same round have said (mirrors start_debate behaviour)
         prior_messages = []
+        agent_responses = []
         try:
             for agent in responding_agents:
                 if agent is None:
@@ -235,7 +270,7 @@ class WarRoomOrchestrator:
 
                 system_prompt = build_followup_prompt(
                     agent, session.topic, prior_messages,
-                    dossier=dossier, memory_context=memory_context,
+                    dossier=dossier, memory_context=full_memory_context,
                 )
 
                 yield self._sse("agent_start", {
@@ -264,20 +299,43 @@ class WarRoomOrchestrator:
                 self.db.add(agent_msg)
                 await self.db.flush()
 
+                # Extract memories and generate insights
+                await self.memory_service.extract_and_store(
+                    agent.name, full_response, content, session.id
+                )
+                await self.insight_service.generate_insight(agent.name, content, full_response)
+
                 prior_messages.append({"sender": agent.display_name, "content": full_response})
+                agent_responses.append({
+                    "sender": agent.display_name,
+                    "sender_type": "agent",
+                    "content": full_response,
+                })
 
                 yield self._sse("agent_end", {"agent": agent.name})
+
+            # Synthesize follow-up round
+            synthesis = ""
+            try:
+                if agent_responses:
+                    synthesis = await self.ai.synthesize_debate(
+                        f"{session.topic} — follow-up: {content}", agent_responses
+                    )
+                    yield self._sse("synthesis", {"content": synthesis})
+            except Exception as e:
+                logger.warning("Follow-up synthesis failed: %s", e)
 
             yield self._sse("round_end", {
                 "session_id": str(session.id),
                 "message_count": len(prior_messages),
+                "has_synthesis": bool(synthesis),
             })
 
             await self.db.commit()
 
         except Exception as e:
             await self.db.rollback()
-            print(f"[ERROR] War Room follow-up failed: {e}")
+            logger.error("War Room follow-up failed: %s", e, exc_info=True)
             yield self._sse("error", {"message": f"Follow-up failed: {str(e)}"})
             yield self._sse("round_end", {
                 "session_id": str(session.id),
@@ -285,5 +343,10 @@ class WarRoomOrchestrator:
             })
 
     def _sse(self, event: str, data: dict) -> str:
-        """Format a Server-Sent Event."""
-        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+        """Format a Server-Sent Event.
+
+        Replaces literal newlines in the JSON so multi-line agent tokens
+        don't break SSE parsers that split on newlines.
+        """
+        json_str = json.dumps(data).replace("\n", "\\n")
+        return f"event: {event}\ndata: {json_str}\n\n"

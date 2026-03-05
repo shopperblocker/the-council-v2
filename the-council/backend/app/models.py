@@ -4,7 +4,7 @@ Database Models: SQLAlchemy ORM models for The Council.
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, JSON, Uuid
+from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, JSON, Uuid, UniqueConstraint, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -125,6 +125,7 @@ class Transaction(Base):
 
 class PortfolioPosition(Base):
     __tablename__ = "portfolio_positions"
+    __table_args__ = (UniqueConstraint("ticker", name="uq_portfolio_ticker"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(String(20))
@@ -139,6 +140,7 @@ class PortfolioPosition(Base):
 
 class Plan(Base):
     __tablename__ = "plans"
+    __table_args__ = (CheckConstraint("progress >= 0 AND progress <= 100", name="ck_plan_progress"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(300))
