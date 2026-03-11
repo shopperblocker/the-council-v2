@@ -2,11 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Build context is repo root (Railway uses repo root with dockerfilePath)
-COPY the-council/backend/requirements.txt ./requirements.txt
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY the-council/backend/ .
+COPY . .
 
 # Run as non-root for security
 RUN useradd -r -s /bin/false appuser && chown -R appuser /app

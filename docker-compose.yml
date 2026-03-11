@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: ./the-council/backend
+      dockerfile: Dockerfile
+    container_name: council-backend
+    restart: unless-stopped
+    env_file:
+      - ./the-council/backend/.env
+    expose:
+      - "8000"
+
+  bot:
+    build:
+      context: ./claw
+      dockerfile: Dockerfile
+    container_name: council-bot
+    restart: unless-stopped
+    env_file:
+      - ./claw/.env
+
+  nginx:
+    image: nginx:alpine
+    container_name: council-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
