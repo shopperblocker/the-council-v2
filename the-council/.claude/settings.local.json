@@ -1,13 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git init:*)",
-      "Bash(git add:*)",
-      "Bash(git reset:*)",
-      "Bash(.gitignore << 'EOF'\n# Dependencies\nnode_modules/\nvenv/\n\n# Environment variables\n.env\n\n# Python\n__pycache__/\n*.py[cod]\n*$py.class\n*.so\n.Python\n\n# OS\n.DS_Store\nThumbs.db\n\n# IDE\n.vscode/\n.idea/\n*.swp\n*.swo\n\n# Build outputs\ndist/\nbuild/\n*.egg-info/\n\n# Next.js\n.next/\nout/\nEOF)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfresh clean deploy\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git remote add:*)",
-      "Bash(git push:*)"
+      "Bash(git:*)",
+      "Bash(npm:*)",
+      "Bash(node:*)"
     ]
   }
 }
