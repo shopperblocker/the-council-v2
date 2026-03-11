@@ -2,12 +2,87 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── CSS Variables ── */
+:root {
+  --council-navy: #0a1628;
+  --council-navy-light: #0d1f3c;
+  --council-navy-mid: #112240;
+  --council-surface: #0f1e35;
+  --council-border: #1e3a5f;
+  --council-gold: #c9a84c;
+  --council-gold-light: #e8c97a;
+  --council-gold-dim: #8a6d2f;
+  --council-cream: #f5f0e8;
+  --council-text-primary: #e8dcc8;
+  --council-text-secondary: #9a8a6a;
+
+  /* shadcn/ui overrides — dark-only */
+  --background: #0a1628;
+  --foreground: #e8dcc8;
+  --card: #0f1e35;
+  --card-foreground: #e8dcc8;
+  --popover: #0f1e35;
+  --popover-foreground: #e8dcc8;
+  --primary: #c9a84c;
+  --primary-foreground: #0a1628;
+  --secondary: #112240;
+  --secondary-foreground: #e8dcc8;
+  --muted: #112240;
+  --muted-foreground: #9a8a6a;
+  --accent: #c9a84c;
+  --accent-foreground: #0a1628;
+  --destructive: #dc2626;
+  --border: #1e3a5f;
+  --input: #1e3a5f;
+  --ring: #c9a84c;
+  --radius: 0.5rem;
+}
+
 /* ── Base ── */
+html,
+body,
+#__next {
+  background: #0a1628;
+  color: #e8dcc8;
+  min-height: 100vh;
+}
+
 body {
-  background: #06060B;
+  background: #0a1628;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-body), Georgia, serif;
+}
+
+/* ── Typography Utilities ── */
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display), Georgia, serif;
+    font-size: clamp(1.5rem, 4vw, 3rem);
+    letter-spacing: 0.05em;
+    line-height: 1.2;
+  }
+
+  .label-caps {
+    font-family: var(--font-label), Georgia, serif;
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #c9a84c;
+  }
+
+  .rule-gold {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      #c9a84c 40%,
+      #c9a84c 60%,
+      transparent 100%
+    );
+    opacity: 0.4;
+  }
 }
 
 /* ── Noise Overlay ── */
@@ -23,60 +98,65 @@ body {
   background-size: 128px 128px;
 }
 
-/* ── Glassmorphism ── */
+/* ── Dark Glassmorphism ── */
 @layer components {
   .glass {
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(15, 30, 53, 0.75);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(30, 58, 95, 0.6);
     border-radius: 16px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
   }
 
   .glass-subtle {
-    background: rgba(255, 255, 255, 0.4);
+    background: rgba(10, 22, 40, 0.6);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(30, 58, 95, 0.4);
     border-radius: 12px;
   }
 
   .glass-strong {
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(15, 30, 53, 0.92);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(30, 58, 95, 0.7);
     border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   }
 
   .glass-input {
-    background: rgba(255, 255, 255, 0.8);
-    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: rgba(10, 22, 40, 0.7);
+    border: 1px solid rgba(30, 58, 95, 0.6);
     border-radius: 12px;
+    color: #e8dcc8;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
+  .glass-input::placeholder {
+    color: #9a8a6a;
+  }
+
   .glass-input:focus {
-    border-color: #3B82F6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: #c9a84c;
+    box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.15);
     outline: none;
   }
 
   .btn-primary {
-    background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
-    color: white;
+    background: linear-gradient(135deg, #c9a84c 0%, #8a6d2f 100%);
+    color: #0a1628;
     border-radius: 12px;
     font-weight: 600;
     letter-spacing: 0.3px;
-    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 16px rgba(201, 168, 76, 0.25);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.35);
+    box-shadow: 0 8px 24px rgba(201, 168, 76, 0.35);
   }
 
   .btn-primary:active {
@@ -92,14 +172,14 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(201, 168, 76, 0.15);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(201, 168, 76, 0.28);
 }
 
-/* ── Agent Message Animations ── */
+/* ── Keyframes ── */
 @keyframes messageSlide {
   0% {
     opacity: 0;
@@ -115,7 +195,6 @@ body {
   animation: messageSlide 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-/* ── Typing Indicator ── */
 @keyframes pulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
@@ -127,6 +206,30 @@ body {
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
+@keyframes councilPulse {
+  0%, 100% { transform: scaleY(0.6); opacity: 0.3; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+
+@keyframes councilExpand {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
+@keyframes councilFadeIn {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes speakingPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(201, 168, 76, 0); }
+  50% { transform: scale(1.04); box-shadow: 0 0 0 4px rgba(201, 168, 76, 0.2); }
+}
+
+.council-fade-in {
+  animation: councilFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
 /* ── Markdown Rendering ── */
 .council-markdown h1,
 .council-markdown h2,
@@ -135,13 +238,15 @@ body {
   margin-top: 0.85em;
   margin-bottom: 0.35em;
   line-height: 1.3;
+  color: #e8dcc8;
 }
 .council-markdown h1 { font-size: 1.1em; }
 .council-markdown h2 { font-size: 1.0em; }
-.council-markdown h3 { font-size: 0.95em; color: #8A8A9A; }
+.council-markdown h3 { font-size: 0.95em; color: #9a8a6a; }
 
 .council-markdown p {
   margin-bottom: 0.6em;
+  color: #e8dcc8;
 }
 .council-markdown p:last-child {
   margin-bottom: 0;
@@ -156,58 +261,59 @@ body {
 .council-markdown ol { list-style-type: decimal; }
 .council-markdown li {
   margin-bottom: 0.2em;
+  color: #e8dcc8;
 }
 
 .council-markdown strong {
   font-weight: 700;
+  color: #e8c97a;
 }
 .council-markdown em {
   font-style: italic;
-  color: #8A8A9A;
+  color: #9a8a6a;
 }
 
 .council-markdown code {
-  background: rgba(255,255,255,0.06);
+  background: rgba(201, 168, 76, 0.08);
   padding: 0.1em 0.35em;
   border-radius: 4px;
   font-size: 0.88em;
-  font-family: monospace;
+  font-family: var(--font-mono), monospace;
+  color: #e8c97a;
 }
 
 .council-markdown blockquote {
-  border-left: 3px solid #1A1A2E;
+  border-left: 3px solid #c9a84c;
   padding-left: 0.75em;
-  color: #8A8A9A;
+  color: #9a8a6a;
   font-style: italic;
   margin: 0.5em 0;
+  opacity: 0.8;
 }
 
 .council-markdown hr {
   border: none;
-  border-top: 1px solid #1A1A2E;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #1e3a5f, transparent);
   margin: 0.75em 0;
 }
 
 /* ── Mobile ── */
 @media (max-width: 640px) {
-  /* Prevent iOS zoom on input focus */
   input, textarea, select {
     font-size: 16px !important;
   }
 
-  /* Comfortable touch targets */
   button {
     min-height: 44px;
     min-width: 44px;
   }
 
-  /* Better glass on mobile */
   .glass {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
 
-  /* Safe area for notched phones */
   body {
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
@@ -215,7 +321,6 @@ body {
     padding-right: env(safe-area-inset-right);
   }
 
-  /* Prevent horizontal overflow */
   html, body {
     overflow-x: hidden;
   }

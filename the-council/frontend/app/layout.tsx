@@ -1,10 +1,42 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display, JetBrains_Mono } from "next/font/google";
+import {
+  Cormorant_Garamond,
+  Libre_Baskerville,
+  Cinzel,
+  JetBrains_Mono,
+} from "next/font/google";
+import { SessionProvider } from "next-auth/react";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
-const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-display" });
-const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const libreBaskerville = Libre_Baskerville({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-body",
+  display: "swap",
+});
+
+const cinzel = Cinzel({
+  subsets: ["latin"],
+  weight: ["400", "600"],
+  variable: "--font-label",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "The Council",
@@ -13,9 +45,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${playfair.variable} ${jetbrainsMono.variable}`}>
-      <body className="font-body bg-council-bg text-council-text-primary">
-        {children}
+    <html
+      lang="en"
+      className={`${cormorant.variable} ${libreBaskerville.variable} ${cinzel.variable} ${jetbrainsMono.variable}`}
+    >
+      <body className="font-body bg-council-navy text-council-text-primary">
+        <SessionProvider>{children}</SessionProvider>
       </body>
     </html>
   );

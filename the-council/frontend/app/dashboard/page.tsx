@@ -1,7 +1,22 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import {
+  fetchSessions,
+  fetchPrivateDeskSessions,
+  fetchUnreadInsightsCount,
+  fetchClawSummary,
+} from "@/lib/api";
+import type { ClawSummary } from "@/lib/types";
+
+interface Metrics {
+  warRoomSessions: number;
+  privateDeskSessions: number;
+  unreadInsights: number;
+  claw: ClawSummary | null;
+}
 
 const TABLES = [
   {
@@ -77,6 +92,15 @@ const TABLES = [
     initial: "B",
   },
   {
+    name: "Insights",
+    label: "Advisory Patterns",
+    description: "Patterns, opportunities, and warnings your advisors have flagged across all your sessions.",
+    href: "/insights",
+    color: "#c9a84c",
+    accent: "rgba(201,168,76,0.12)",
+    initial: "I",
+  },
+  {
     name: "Profile",
     label: "Your Dossier",
     description: "Edit what your advisors know about you. Control the context. Shape the advice.",
@@ -89,12 +113,40 @@ const TABLES = [
 
 export default function Dashboard() {
   const router = useRouter();
+  const [metrics, setMetrics] = useState<Metrics>({
+    warRoomSessions: 0,
+    privateDeskSessions: 0,
+    unreadInsights: 0,
+    claw: null,
+  });
+
+  useEffect(() => {
+    // Fetch all metrics in parallel — failures are non-fatal
+    Promise.allSettled([
+      fetchSessions().then((s) => s.length).catch(() => 0),
+      fetchPrivateDeskSessions().then((s) => s.length).catch(() => 0),
+      fetchUnreadInsightsCount().catch(() => 0),
+      fetchClawSummary().catch(() => null),
+    ]).then(([wr, pd, ins, claw]) => {
+      setMetrics({
+        warRoomSessions: wr.status === "fulfilled" ? wr.value : 0,
+        privateDeskSessions: pd.status === "fulfilled" ? pd.value : 0,
+        unreadInsights: ins.status === "fulfilled" ? (ins.value as number) : 0,
+        claw: claw.status === "fulfilled" ? (claw.value as ClawSummary | null) : null,
+      });
+    });
+  }, []);
+
+  const clawTotal = metrics.claw
+    ? metrics.claw.total
+    : 0;
+  const clawRunning = metrics.claw?.running ?? 0;
 
   return (
-    <div className="min-h-screen bg-council-bg py-16 px-4 sm:px-6">
+    <div className="min-h-screen bg-council-navy py-10 sm:py-16 px-4 sm:px-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-10 flex items-start justify-between">
+        <div className="mb-8 flex items-start justify-between">
           <div>
             <Link
               href="/"
@@ -111,59 +163,100 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Key Metrics Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+          <MetricCard
+            label="War Room Sessions"
+            value={metrics.warRoomSessions}
+            color="#DC2626"
+          />
+          <MetricCard
+            label="Private Desk Sessions"
+            value={metrics.privateDeskSessions}
+            color="#3B82F6"
+          />
+          <MetricCard
+            label="Unread Insights"
+            value={metrics.unreadInsights}
+            color="#c9a84c"
+            href="/insights"
+          />
+          <MetricCard
+            label={clawRunning > 0 ? `Claw: ${clawRunning} running` : "Claw Tasks"}
+            value={clawTotal}
+            color="#10B981"
+          />
+        </div>
+
         {/* Table Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-          {TABLES.map((table) => (
-            <button
-              key={table.href + table.name}
-              onClick={() => router.push(table.href)}
-              className="text-left group"
-            >
-              <div
-                className="h-full p-5 rounded-xl border transition-all duration-200 hover:-translate-y-0.5 cursor-pointer"
-                style={{
-                  background: "#0D0D14",
-                  borderColor: "#1A1A2E",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.borderColor = `${table.color}40`;
-                  (e.currentTarget as HTMLDivElement).style.boxShadow = `0 4px 24px ${table.color}10`;
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.borderColor = "#1A1A2E";
-                  (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
-                }}
-              >
-                <div className="flex items-start gap-4">
-                  {/* Icon */}
-                  <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-sm font-display font-bold"
-                    style={{ background: table.accent, color: table.color }}
-                  >
-                    {table.initial}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-mono text-[10px] tracking-[0.2em] uppercase mb-0.5" style={{ color: table.color, opacity: 0.7 }}>
-                      {table.label}
-                    </p>
-                    <h2 className="font-display text-base font-bold text-council-text-primary">
-                      {table.name}
-                    </h2>
-                    <p className="text-xs text-council-text-secondary mt-1.5 leading-relaxed">
-                      {table.description}
-                    </p>
-                  </div>
-                </div>
+          {TABLES.map((table) => {
+            // Badge counts for specific cards
+            let badge: number | null = null;
+            if (table.href === "/insights" && metrics.unreadInsights > 0) {
+              badge = metrics.unreadInsights;
+            }
 
+            return (
+              <button
+                key={table.href + table.name}
+                onClick={() => router.push(table.href)}
+                className="text-left group"
+              >
                 <div
-                  className="mt-4 text-xs font-semibold font-mono tracking-wide transition-opacity opacity-0 group-hover:opacity-100"
-                  style={{ color: table.color }}
+                  className="h-full p-5 rounded-xl border transition-all duration-200 hover:-translate-y-0.5 cursor-pointer"
+                  style={{
+                    background: "#0f1e35",
+                    borderColor: "#1e3a5f",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.borderColor = `${table.color}40`;
+                    (e.currentTarget as HTMLDivElement).style.boxShadow = `0 4px 24px ${table.color}10`;
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.borderColor = "#1e3a5f";
+                    (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
+                  }}
                 >
-                  Enter &rarr;
+                  <div className="flex items-start gap-4">
+                    {/* Icon */}
+                    <div
+                      className="relative w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-sm font-display font-bold"
+                      style={{ background: table.accent, color: table.color }}
+                    >
+                      {table.initial}
+                      {badge != null && badge > 0 && (
+                        <span
+                          className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-[10px] font-mono font-bold text-white"
+                          style={{ background: table.color }}
+                        >
+                          {badge}
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-mono text-[10px] tracking-[0.2em] uppercase mb-0.5" style={{ color: table.color, opacity: 0.7 }}>
+                        {table.label}
+                      </p>
+                      <h2 className="font-display text-base font-bold text-council-text-primary">
+                        {table.name}
+                      </h2>
+                      <p className="text-xs text-council-text-secondary mt-1.5 leading-relaxed">
+                        {table.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    className="mt-4 text-xs font-semibold font-mono tracking-wide transition-opacity opacity-0 group-hover:opacity-100"
+                    style={{ color: table.color }}
+                  >
+                    Enter &rarr;
+                  </div>
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
 
         {/* Footer note */}
@@ -172,5 +265,40 @@ export default function Dashboard() {
         </p>
       </div>
     </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  color,
+  href,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  href?: string;
+}) {
+  const router = useRouter();
+
+  return (
+    <button
+      onClick={href ? () => router.push(href) : undefined}
+      className={`text-left p-4 rounded-xl border transition-all ${href ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default"}`}
+      style={{
+        background: "#0f1e35",
+        borderColor: "#1e3a5f",
+      }}
+    >
+      <p className="font-mono text-[10px] tracking-[0.15em] uppercase text-council-text-secondary mb-1">
+        {label}
+      </p>
+      <p
+        className="text-2xl font-display font-bold"
+        style={{ color }}
+      >
+        {value}
+      </p>
+    </button>
   );
 }

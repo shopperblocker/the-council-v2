@@ -2,217 +2,231 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import GlassPanel from "@/components/GlassPanel";
-import ErrorBanner from "@/components/ErrorBanner";
-import { fetchPlans, createPlan, createMilestone, toggleMilestone, startGenericStream, isTokenEvent } from "@/lib/api";
-import type { Plan } from "@/lib/types";
+import AgentQuickLaunch from "@/components/AgentQuickLaunch";
 
-const CATEGORIES = ["business", "academic", "health", "financial", "personal"];
+const STORAGE_KEY = "council:plans:goals";
 
-export default function PlansHubPage() {
+type Column = "This Week" | "This Semester" | "Long Term";
+
+interface Goal {
+  id: string;
+  text: string;
+  column: Column;
+  done: boolean;
+  deadline?: string;
+}
+
+const COLUMNS: Column[] = ["This Week", "This Semester", "Long Term"];
+
+const COLUMN_COLORS: Record<Column, string> = {
+  "This Week": "#c9a84c",
+  "This Semester": "#7b9ea6",
+  "Long Term": "#8b9467",
+};
+
+export default function PlansPage() {
   const router = useRouter();
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
-  const [newMilestone, setNewMilestone] = useState("");
-  const [review, setReview] = useState("");
-  const [reviewing, setReviewing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [adding, setAdding] = useState<Column | null>(null);
+  const [draft, setDraft] = useState("");
+  const [deadline, setDeadline] = useState("");
 
-  const reload = () => fetchPlans().then(setPlans).catch(() => setError("Failed to load plans. Is the backend running?"));
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setGoals(JSON.parse(raw));
+    } catch {}
+  }, []);
 
-  const handleCreatePlan = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    await createPlan({
-      title: form.get("title") as string,
-      description: form.get("description") as string,
-      category: form.get("category") as string,
-      target_date: form.get("target_date") as string || undefined,
-    });
-    setShowAdd(false);
-    reload();
+  const save = (updated: Goal[]) => {
+    setGoals(updated);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   };
 
-  const handleAddMilestone = async () => {
-    if (!selectedPlan || !newMilestone.trim()) return;
-    await createMilestone(selectedPlan.id, { title: newMilestone.trim() });
-    setNewMilestone("");
-    reload();
-    // Refresh selected plan
-    const updated = await fetchPlans();
-    setPlans(updated);
-    setSelectedPlan(updated.find((p) => p.id === selectedPlan.id) || null);
-  };
-
-  const handleToggle = async (planId: number, milestoneId: number, completed: boolean) => {
-    await toggleMilestone(planId, milestoneId, !completed);
-    reload();
-    const updated = await fetchPlans();
-    setPlans(updated);
-    setSelectedPlan(updated.find((p) => p.id === planId) || null);
-  };
-
-  const handleReview = (plan: Plan) => {
-    setReviewing(true);
-    setReview("");
-    startGenericStream(
-      `/plans/${plan.id}/review`,
-      {},
+  const addGoal = (col: Column) => {
+    if (!draft.trim()) return;
+    save([
+      ...goals,
       {
-        onAgentToken: (data) => { if (isTokenEvent(data)) setReview((prev) => prev + data.token); },
-        onRoundEnd: () => setReviewing(false),
-        onError: () => setReviewing(false),
-      }
-    );
+        id: Date.now().toString(),
+        text: draft.trim(),
+        column: col,
+        done: false,
+        deadline: deadline || undefined,
+      },
+    ]);
+    setDraft("");
+    setDeadline("");
+    setAdding(null);
   };
 
-  const activePlans = plans.filter((p) => p.status === "active");
-  const completedPlans = plans.filter((p) => p.status === "completed");
+  const toggleDone = (id: string) => {
+    save(goals.map((g) => (g.id === id ? { ...g, done: !g.done } : g)));
+  };
+
+  const deleteGoal = (id: string) => {
+    save(goals.filter((g) => g.id !== id));
+  };
+
+  // Compile all goals for the "Review with Council" prompt
+  const compiledGoals = COLUMNS.map((col) => {
+    const colGoals = goals.filter((g) => g.column === col && !g.done);
+    if (colGoals.length === 0) return null;
+    return `${col}:\n${colGoals.map((g) => `- ${g.text}${g.deadline ? ` (by ${g.deadline})` : ""}`).join("\n")}`;
+  })
+    .filter(Boolean)
+    .join("\n\n");
+
+  const reviewPrompt = compiledGoals
+    ? `Review my current goals and give strategic advice:\n\n${compiledGoals}\n\nWhat should I prioritize? What am I missing? What risks do you see?`
+    : "Help me think through a strategic plan. What goals should I be setting for this week, this semester, and long term?";
+
+  const weeklyReviewPrompt = `Weekly review check-in. Here are my goals:\n\n${compiledGoals || "(no goals set)"}\n\nWhat did I accomplish? What's blocking me? What's the most important thing this week?`;
 
   return (
-    <div className="min-h-[100dvh] p-3 sm:p-6 bg-[#F8F9FA]">
+    <div className="min-h-[100dvh] bg-council-navy p-4 sm:p-6">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <button onClick={() => router.push("/dashboard")} className="text-gray-400 hover:text-gray-700 text-sm">&larr; Back</button>
-            <h1 className="text-xl sm:text-2xl font-bold">Plans Hub</h1>
-          </div>
-          <button onClick={() => setShowAdd(!showAdd)} className="btn-primary px-4 py-2 text-sm">+ New Plan</button>
+        <div className="mb-8">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="text-council-text-secondary hover:text-council-text-primary transition-colors text-sm mb-5 block"
+          >
+            &larr; Back
+          </button>
+          <div className="rule-gold w-10 mb-4" />
+          <h1
+            className="text-3xl text-council-gold mb-1"
+            style={{ fontFamily: "var(--font-display)", fontWeight: 300, letterSpacing: "0.1em" }}
+          >
+            PLANS
+          </h1>
+          <p className="label-caps text-council-text-secondary">Strategy Execution</p>
         </div>
 
-        <ErrorBanner message={error} onDismiss={() => setError(null)} />
-
-        {/* Add Plan Form */}
-        {showAdd && (
-          <GlassPanel className="p-4 sm:p-6 mb-6">
-            <form onSubmit={handleCreatePlan} className="space-y-3">
-              <input name="title" placeholder="Plan title" required className="glass-input w-full px-4 py-3 text-sm" />
-              <textarea name="description" placeholder="Description (optional)" className="glass-input w-full px-4 py-3 text-sm min-h-[60px]" />
-              <div className="flex gap-3">
-                <select name="category" required className="glass-input flex-1 px-4 py-3 text-sm">
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-                  ))}
-                </select>
-                <input name="target_date" type="date" className="glass-input px-4 py-3 text-sm" />
-              </div>
-              <button type="submit" className="btn-primary px-6 py-3 text-sm w-full">Create Plan</button>
-            </form>
-          </GlassPanel>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-          {/* Plans List */}
-          <div className="lg:col-span-1 space-y-3">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Active ({activePlans.length})</h2>
-            {activePlans.map((plan) => (
-              <button
-                key={plan.id}
-                onClick={() => { setSelectedPlan(plan); setReview(""); }}
-                className={`w-full text-left ${selectedPlan?.id === plan.id ? "" : ""}`}
-              >
-                <GlassPanel className={`p-4 transition-all ${selectedPlan?.id === plan.id ? "ring-2 ring-blue-400" : "hover:-translate-y-0.5"}`}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{plan.title}</p>
-                      <p className="text-xs text-gray-400 capitalize mt-0.5">{plan.category}</p>
-                    </div>
-                    <span className="text-xs font-bold text-blue-500">{Math.round(plan.progress * 100)}%</span>
-                  </div>
-                  <div className="mt-2 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${plan.progress * 100}%` }} />
-                  </div>
-                </GlassPanel>
-              </button>
-            ))}
-            {activePlans.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No active plans</p>}
-
-            {completedPlans.length > 0 && (
-              <>
-                <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mt-6 mb-2">Completed ({completedPlans.length})</h2>
-                {completedPlans.map((plan) => (
-                  <GlassPanel key={plan.id} className="p-4 opacity-60">
-                    <p className="text-sm text-gray-700 line-through">{plan.title}</p>
-                  </GlassPanel>
-                ))}
-              </>
-            )}
-          </div>
-
-          {/* Plan Detail */}
-          <div className="lg:col-span-2">
-            {selectedPlan ? (
-              <GlassPanel className="p-4 sm:p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h2 className="text-lg font-bold text-gray-900">{selectedPlan.title}</h2>
-                    {selectedPlan.description && <p className="text-sm text-gray-500 mt-1">{selectedPlan.description}</p>}
-                    <div className="flex gap-3 mt-2">
-                      <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-lg capitalize">{selectedPlan.category}</span>
-                      {selectedPlan.target_date && <span className="text-xs text-gray-400">Due: {selectedPlan.target_date}</span>}
-                    </div>
-                  </div>
+        {/* Three column grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          {COLUMNS.map((col) => {
+            const colGoals = goals.filter((g) => g.column === col);
+            const color = COLUMN_COLORS[col];
+            return (
+              <div key={col}>
+                <div
+                  className="flex items-center justify-between mb-3 pb-2"
+                  style={{ borderBottom: `1px solid ${color}30` }}
+                >
+                  <span className="label-caps" style={{ color }}>{col}</span>
                   <button
-                    onClick={() => handleReview(selectedPlan)}
-                    disabled={reviewing}
-                    className="btn-primary px-4 py-2 text-sm shrink-0"
+                    onClick={() => { setAdding(col); setDraft(""); setDeadline(""); }}
+                    className="text-[10px] transition-colors label-caps hover:opacity-80"
+                    style={{ color }}
                   >
-                    {reviewing ? "..." : "Council Review"}
+                    + Add
                   </button>
                 </div>
 
-                {/* Milestones */}
-                <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 mt-6 mb-3">Milestones</h3>
-                <div className="space-y-2">
-                  {(selectedPlan.milestones || []).map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => handleToggle(selectedPlan.id, m.id, m.completed)}
-                      className="w-full flex items-center gap-3 p-3 bg-white/20 rounded-xl text-left hover:bg-white/30 transition-colors"
-                    >
-                      <span className={`w-5 h-5 rounded-md border-2 flex items-center justify-center text-xs shrink-0 ${m.completed ? "bg-emerald-500 border-emerald-500 text-white" : "border-gray-300"}`}>
-                        {m.completed && "OK"}
-                      </span>
-                      <span className={`text-sm ${m.completed ? "line-through text-gray-400" : "text-gray-800"}`}>{m.title}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Add milestone */}
-                <div className="flex gap-2 mt-3">
-                  <input
-                    value={newMilestone}
-                    onChange={(e) => setNewMilestone(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleAddMilestone()}
-                    placeholder="Add milestone..."
-                    className="glass-input flex-1 px-3 py-2 text-sm"
-                  />
-                  <button onClick={handleAddMilestone} className="btn-primary px-3 py-2 text-sm">+</button>
-                </div>
-
-                {/* Review */}
-                {review && (
-                  <div className="mt-6 p-4 bg-white/30 rounded-xl">
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-purple-400 mb-2">Council Review</h3>
-                    <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                      {review}
-                      {reviewing && <span className="inline-block w-1.5 h-4 bg-purple-500 animate-pulse ml-0.5" />}
+                {/* Add form */}
+                {adding === col && (
+                  <div
+                    className="p-2.5 rounded-lg mb-2 space-y-1.5"
+                    style={{ background: "rgba(15,30,53,0.8)", border: `1px solid ${color}30` }}
+                  >
+                    <input
+                      type="text"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      placeholder="Goal..."
+                      className="glass-input w-full px-2.5 py-1.5 text-xs"
+                      onKeyDown={(e) => e.key === "Enter" && addGoal(col)}
+                      autoFocus
+                    />
+                    <input
+                      type="date"
+                      value={deadline}
+                      onChange={(e) => setDeadline(e.target.value)}
+                      className="glass-input w-full px-2.5 py-1 text-xs"
+                    />
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => addGoal(col)}
+                        disabled={!draft.trim()}
+                        className="flex-1 py-1 text-xs rounded-lg transition-all disabled:opacity-40"
+                        style={{ background: `${color}18`, color, border: `1px solid ${color}40` }}
+                      >
+                        Add
+                      </button>
+                      <button
+                        onClick={() => setAdding(null)}
+                        className="px-2 py-1 text-xs rounded-lg text-council-text-tertiary border border-council-border"
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
                 )}
-              </GlassPanel>
-            ) : (
-              <GlassPanel className="p-8 flex items-center justify-center min-h-[300px]">
-                <div className="text-center">
-                  <p className="text-3xl mb-3">&#128203;</p>
-                  <p className="text-gray-400 text-sm">Select a plan or create a new one</p>
+
+                {/* Goals list */}
+                <div className="space-y-1.5">
+                  {colGoals.length === 0 ? (
+                    <p className="text-[10px] text-council-text-tertiary italic py-4 text-center">No goals yet</p>
+                  ) : (
+                    colGoals.map((g) => (
+                      <div
+                        key={g.id}
+                        className="flex items-start gap-2 p-2 rounded-lg group transition-all"
+                        style={{
+                          background: "rgba(15,30,53,0.5)",
+                          border: "1px solid rgba(30,58,95,0.6)",
+                          opacity: g.done ? 0.5 : 1,
+                        }}
+                      >
+                        <button
+                          onClick={() => toggleDone(g.id)}
+                          className="flex-shrink-0 w-3.5 h-3.5 rounded border mt-0.5 flex items-center justify-center transition-colors"
+                          style={{
+                            borderColor: g.done ? color : "#1e3a5f",
+                            background: g.done ? `${color}20` : "transparent",
+                          }}
+                        >
+                          {g.done && <span className="text-[7px]" style={{ color }}>✓</span>}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs leading-relaxed ${g.done ? "line-through text-council-text-secondary" : "text-council-text-primary"}`}>
+                            {g.text}
+                          </p>
+                          {g.deadline && (
+                            <p className="text-[9px] text-council-text-tertiary mt-0.5">{g.deadline}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => deleteGoal(g.id)}
+                          className="flex-shrink-0 text-[9px] text-council-text-tertiary hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
-              </GlassPanel>
-            )}
-          </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Council review buttons */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <AgentQuickLaunch
+            agents={["Napoleon", "Marcus_Aurelius", "Rockefeller"]}
+            prefillPrompt={reviewPrompt}
+            mode="war-room"
+            title="Review with Council"
+          />
+          <AgentQuickLaunch
+            agents={["Marcus_Aurelius"]}
+            prefillPrompt={weeklyReviewPrompt}
+            mode="private-desk"
+            title="Weekly Review"
+          />
         </div>
       </div>
     </div>

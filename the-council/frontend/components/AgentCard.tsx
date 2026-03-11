@@ -25,9 +25,8 @@ export default function AgentCard({
           flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-200 w-full text-left
           ${isActive
             ? "glass-strong shadow-sm"
-            : "hover:bg-white/30"
+            : "hover:bg-council-navy-mid/40"
           }
-          ${isSpeaking ? "ring-2 ring-offset-1" : ""}
         `}
         style={{
           borderLeft: isActive ? `3px solid ${agent.color}` : "3px solid transparent",
@@ -36,10 +35,10 @@ export default function AgentCard({
       >
         <span className="text-2xl">{agent.emoji}</span>
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-gray-800 truncate" style={{ letterSpacing: "-0.3px" }}>
+          <div className="text-sm font-semibold text-council-text-primary truncate" style={{ letterSpacing: "-0.3px" }}>
             {agent.display_name}
           </div>
-          <div className="text-[11px] text-gray-500 truncate">{agent.role}</div>
+          <div className="text-[11px] text-council-text-secondary truncate">{agent.role}</div>
         </div>
         {isSpeaking && (
           <span className="ml-auto flex gap-0.5">
@@ -68,11 +67,11 @@ export default function AgentCard({
       <div className="flex items-start gap-3">
         <span className="text-3xl">{agent.emoji}</span>
         <div className="min-w-0 flex-1">
-          <div className="font-semibold text-gray-800" style={{ letterSpacing: "-0.3px" }}>
+          <div className="font-semibold text-council-text-primary" style={{ letterSpacing: "-0.3px" }}>
             {agent.display_name}
           </div>
-          <div className="text-xs text-gray-500 mt-0.5">{agent.role}</div>
-          <div className="text-xs text-gray-400 mt-1 italic line-clamp-2">
+          <div className="text-xs text-council-text-secondary mt-0.5">{agent.role}</div>
+          <div className="text-xs text-council-text-tertiary mt-1 italic line-clamp-2">
             &ldquo;{agent.core_belief}&rdquo;
           </div>
         </div>

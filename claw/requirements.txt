@@ -1,0 +1,4 @@
+python-telegram-bot>=20.0
+# All other dependencies are stdlib: json, subprocess, datetime, pathlib, fcntl (Unix)
+# Optional: psycopg2-binary (for Railway postgres sync)
+# psycopg2-binary>=2.9

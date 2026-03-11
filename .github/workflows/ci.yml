@@ -59,3 +59,19 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000/api
+
+  screenshot-check:
+    name: Screenshot required for UI changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for screenshot in PR body
+        env:
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash .github/scripts/check-screenshot.sh

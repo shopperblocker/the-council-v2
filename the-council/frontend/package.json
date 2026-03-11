@@ -9,19 +9,27 @@
     "test": "jest",
     "lint": "next lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,css,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,css,md}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,css,md}\"",
+    "capture-demo": "ts-node scripts/capture-demo.ts",
+    "audit:design": "ts-node scripts/audit-design.ts"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.7",
+    "bcryptjs": "^2.4.3",
     "framer-motion": "^12.34.3",
     "lucide-react": "^0.400.0",
     "next": "^14.2.0",
+    "next-auth": "^5.0.0-beta.25",
+    "pg": "^8.13.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-markdown": "^9.0.1"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.0",

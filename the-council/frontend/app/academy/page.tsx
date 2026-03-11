@@ -2,190 +2,226 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import GlassPanel from "@/components/GlassPanel";
-import ErrorBanner from "@/components/ErrorBanner";
-import { fetchStudyPaths, createStudyPath, startGenericStream, isTokenEvent } from "@/lib/api";
-import type { StudyPath } from "@/lib/types";
+import AgentQuickLaunch from "@/components/AgentQuickLaunch";
 
-type Mode = "paths" | "explain" | "question" | "quiz";
+const STORAGE_KEY = "council:academy:topics";
 
-const MASTERY_COLORS: Record<string, string> = {
-  not_started: "#9CA3AF",
-  learning: "#F59E0B",
-  practiced: "#3B82F6",
-  mastered: "#10B981",
-};
+interface Topic {
+  id: string;
+  title: string;
+  course: string;
+  date: string;
+  mastered: boolean;
+}
+
+const QUICK_ACTIONS = [
+  {
+    label: "Essay Review",
+    prompt: "Review my writing for clarity, argumentation, and depth. Give specific, actionable feedback.",
+  },
+  {
+    label: "Concept Explainer",
+    prompt: "Explain this concept using the Feynman technique — no jargon, just first principles.",
+  },
+  {
+    label: "Exam Prep",
+    prompt: "Help me prepare for my upcoming exam. Quiz me and identify my weak spots.",
+  },
+  {
+    label: "Socratic Dialogue",
+    prompt: "Challenge my understanding through questions. Don't give me answers — make me discover them.",
+  },
+];
 
 export default function AcademyPage() {
   const router = useRouter();
-  const [paths, setPaths] = useState<StudyPath[]>([]);
-  const [mode, setMode] = useState<Mode>("paths");
-  const [showAdd, setShowAdd] = useState(false);
-  const [input, setInput] = useState("");
-  const [response, setResponse] = useState("");
-  const [streaming, setStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [title, setTitle] = useState("");
+  const [course, setCourse] = useState("");
+  const [prefill, setPrefill] = useState(QUICK_ACTIONS[0].prompt);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
-    fetchStudyPaths().then(setPaths).catch(() => setError("Failed to load study paths. Is the backend running?"));
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setTopics(JSON.parse(raw));
+    } catch {}
   }, []);
 
-  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    await createStudyPath({
-      subject: form.get("subject") as string,
-      description: form.get("description") as string,
-      difficulty: form.get("difficulty") as string,
-    });
-    setShowAdd(false);
-    fetchStudyPaths().then(setPaths);
+  const save = (updated: Topic[]) => {
+    setTopics(updated);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   };
 
-  const handleAIAction = (endpoint: string) => {
-    if (!input.trim() || streaming) return;
-    setStreaming(true);
-    setResponse("");
-    startGenericStream(
-      `/academy/${endpoint}`,
-      { concept: input, topic: input, difficulty: "intermediate" },
-      {
-        onAgentToken: (data) => { if (isTokenEvent(data)) setResponse((prev) => prev + data.token); },
-        onRoundEnd: () => setStreaming(false),
-        onError: () => setStreaming(false),
-      }
-    );
+  const addTopic = () => {
+    if (!title.trim()) return;
+    const topic: Topic = {
+      id: Date.now().toString(),
+      title: title.trim(),
+      course: course.trim(),
+      date: new Date().toISOString().split("T")[0],
+      mastered: false,
+    };
+    save([topic, ...topics]);
+    setTitle("");
+    setCourse("");
+    setAdding(false);
   };
 
-  const modes: { key: Mode; label: string; emoji: string; description: string }[] = [
-    { key: "paths", label: "Study Paths", emoji: "📚", description: "Track your learning" },
-    { key: "explain", label: "Feynman Explains", emoji: "⚛️", description: "Simple explanations" },
-    { key: "question", label: "Socrates Questions", emoji: "🦉", description: "Challenge understanding" },
-    { key: "quiz", label: "Quiz Me", emoji: "🧠", description: "Test your knowledge" },
-  ];
+  const toggleMastered = (id: string) => {
+    save(topics.map((t) => (t.id === id ? { ...t, mastered: !t.mastered } : t)));
+  };
+
+  const deleteTopic = (id: string) => {
+    save(topics.filter((t) => t.id !== id));
+  };
 
   return (
-    <div className="min-h-[100dvh] p-3 sm:p-6 bg-[#F8F9FA]">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-[100dvh] bg-council-navy p-4 sm:p-6">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => router.push("/dashboard")} className="text-gray-400 hover:text-gray-700 text-sm">&larr; Back</button>
-          <h1 className="text-xl sm:text-2xl font-bold">Academy</h1>
+        <div className="mb-8">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="text-council-text-secondary hover:text-council-text-primary transition-colors text-sm mb-5 block"
+          >
+            &larr; Back
+          </button>
+          <div className="rule-gold w-10 mb-4" />
+          <h1
+            className="text-3xl text-council-gold mb-1"
+            style={{ fontFamily: "var(--font-display)", fontWeight: 300, letterSpacing: "0.1em" }}
+          >
+            ACADEMY
+          </h1>
+          <p className="label-caps text-council-text-secondary">Adaptive Learning</p>
         </div>
 
-        <ErrorBanner message={error} onDismiss={() => setError(null)} />
-
-        {/* Mode Selector */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-6">
-          {modes.map((m) => (
-            <button key={m.key} onClick={() => setMode(m.key)}>
-              <GlassPanel className={`p-3 sm:p-4 text-center transition-all ${mode === m.key ? "ring-2 ring-amber-400" : "hover:-translate-y-0.5"}`}>
-                <p className="text-xl sm:text-2xl mb-1">{m.emoji}</p>
-                <p className="text-xs sm:text-sm font-semibold text-gray-900">{m.label}</p>
-                <p className="text-[10px] text-gray-400 hidden sm:block">{m.description}</p>
-              </GlassPanel>
-            </button>
-          ))}
-        </div>
-
-        {/* Study Paths View */}
-        {mode === "paths" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Left: Study Topics */}
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Your Study Paths</h2>
-              <button onClick={() => setShowAdd(!showAdd)} className="text-sm text-amber-500 hover:text-amber-700">+ Add Path</button>
+            <div className="flex items-center justify-between mb-3">
+              <span className="label-caps">Study Topics</span>
+              <button
+                onClick={() => setAdding(!adding)}
+                className="text-xs text-council-gold hover:text-council-gold-light transition-colors label-caps"
+              >
+                {adding ? "Cancel" : "+ Add"}
+              </button>
             </div>
 
-            {showAdd && (
-              <GlassPanel className="p-4 mb-4">
-                <form onSubmit={handleCreate} className="space-y-3">
-                  <input name="subject" placeholder="Subject (e.g., Linear Algebra)" required className="glass-input w-full px-4 py-3 text-sm" />
-                  <textarea name="description" placeholder="Description" className="glass-input w-full px-4 py-2 text-sm" />
-                  <select name="difficulty" className="glass-input w-full px-4 py-2 text-sm">
-                    <option value="beginner">Beginner</option>
-                    <option value="intermediate">Intermediate</option>
-                    <option value="advanced">Advanced</option>
-                  </select>
-                  <button type="submit" className="btn-primary px-4 py-2 text-sm w-full">Create</button>
-                </form>
-              </GlassPanel>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {paths.map((path) => (
-                <GlassPanel key={path.id} className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{path.subject}</h3>
-                      {path.description && <p className="text-xs text-gray-400 mt-1">{path.description}</p>}
-                      <span className="text-[10px] px-2 py-0.5 bg-amber-100 text-amber-700 rounded-lg mt-2 inline-block capitalize">{path.difficulty}</span>
-                    </div>
-                    <span className="text-sm font-bold text-amber-500">{Math.round(path.progress * 100)}%</span>
-                  </div>
-                  <div className="mt-3 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-400 rounded-full" style={{ width: `${path.progress * 100}%` }} />
-                  </div>
-                  {path.topics && path.topics.length > 0 && (
-                    <div className="mt-3 space-y-1">
-                      {path.topics.map((topic) => (
-                        <div key={topic.id} className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: MASTERY_COLORS[topic.mastery_level] || "#9CA3AF" }} />
-                          <span className="text-xs text-gray-600">{topic.title}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </GlassPanel>
-              ))}
-              {paths.length === 0 && (
-                <GlassPanel className="p-8 sm:col-span-2 text-center">
-                  <p className="text-gray-400 text-sm">No study paths yet. Create one to get started.</p>
-                </GlassPanel>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* AI Modes */}
-        {mode !== "paths" && (
-          <div>
-            <GlassPanel className="p-4 sm:p-6">
-              <div className="flex gap-2 sm:gap-3 mb-4">
+            {/* Add form */}
+            {adding && (
+              <div
+                className="p-3 rounded-xl mb-3 space-y-2"
+                style={{
+                  background: "rgba(15,30,53,0.8)",
+                  border: "1px solid rgba(201,168,76,0.2)",
+                }}
+              >
                 <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleAIAction(mode === "explain" ? "explain" : mode === "question" ? "question" : "quiz");
-                    }
-                  }}
-                  placeholder={
-                    mode === "explain" ? "What concept should Feynman explain?" :
-                    mode === "question" ? "What topic should Socrates probe?" :
-                    "What should the quiz cover?"
-                  }
-                  disabled={streaming}
-                  className="glass-input flex-1 px-4 py-3 text-sm"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Topic title"
+                  className="glass-input w-full px-3 py-2 text-sm"
+                  onKeyDown={(e) => e.key === "Enter" && addTopic()}
+                  autoFocus
+                />
+                <input
+                  type="text"
+                  value={course}
+                  onChange={(e) => setCourse(e.target.value)}
+                  placeholder="Course (optional)"
+                  className="glass-input w-full px-3 py-2 text-sm"
                 />
                 <button
-                  onClick={() => handleAIAction(mode === "explain" ? "explain" : mode === "question" ? "question" : "quiz")}
-                  disabled={streaming || !input.trim()}
-                  className="btn-primary px-4 sm:px-6 py-3 text-sm shrink-0 disabled:opacity-50"
+                  onClick={addTopic}
+                  disabled={!title.trim()}
+                  className="btn-primary w-full py-2 text-sm disabled:opacity-40"
                 >
-                  {streaming ? "..." : "Go"}
+                  Add Topic
                 </button>
               </div>
+            )}
 
-              {response && (
-                <div className="p-4 bg-white/30 rounded-xl text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-                  {response}
-                  {streaming && <span className="inline-block w-1.5 h-4 bg-amber-500 animate-pulse ml-0.5" />}
-                </div>
-              )}
-            </GlassPanel>
+            {/* Topics list */}
+            {topics.length === 0 ? (
+              <p className="text-xs text-council-text-tertiary text-center py-8">
+                No topics yet. Add your first study topic above.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {topics.map((t) => (
+                  <div
+                    key={t.id}
+                    className="flex items-start gap-2 p-3 rounded-xl group transition-all"
+                    style={{
+                      background: "rgba(15,30,53,0.6)",
+                      border: "1px solid rgba(30,58,95,0.7)",
+                      opacity: t.mastered ? 0.6 : 1,
+                    }}
+                  >
+                    <button
+                      onClick={() => toggleMastered(t.id)}
+                      className="flex-shrink-0 w-4 h-4 rounded border mt-0.5 flex items-center justify-center transition-colors"
+                      style={{
+                        borderColor: t.mastered ? "#c9a84c" : "#1e3a5f",
+                        background: t.mastered ? "rgba(201,168,76,0.2)" : "transparent",
+                      }}
+                    >
+                      {t.mastered && <span className="text-[8px] text-council-gold">✓</span>}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm ${t.mastered ? "line-through text-council-text-secondary" : "text-council-text-primary"}`}>
+                        {t.title}
+                      </p>
+                      {t.course && (
+                        <p className="text-[10px] text-council-text-tertiary mt-0.5">{t.course}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => deleteTopic(t.id)}
+                      className="flex-shrink-0 text-council-text-tertiary hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Right: Quick Launch */}
+          <div className="space-y-4">
+            <div>
+              <div className="label-caps mb-2">Quick Actions</div>
+              <div className="grid grid-cols-2 gap-2">
+                {QUICK_ACTIONS.map((action) => (
+                  <button
+                    key={action.label}
+                    onClick={() => setPrefill(action.prompt)}
+                    className="px-3 py-2 rounded-lg text-xs text-left transition-all"
+                    style={{
+                      background: prefill === action.prompt ? "rgba(201,168,76,0.08)" : "rgba(15,30,53,0.5)",
+                      border: `1px solid ${prefill === action.prompt ? "rgba(201,168,76,0.4)" : "rgba(30,58,95,0.8)"}`,
+                      color: prefill === action.prompt ? "#c9a84c" : "#9a8a6a",
+                    }}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <AgentQuickLaunch
+              agents={["Feynman", "Marcus_Aurelius"]}
+              prefillPrompt={prefill}
+              mode="private-desk"
+              title="Ask the Scholars"
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
