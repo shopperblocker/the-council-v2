@@ -1,22 +1,24 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import GlassPanel from "@/components/GlassPanel";
-import SessionHistory from "@/components/SessionHistory";
+import ConversationSidebar from "@/components/ConversationSidebar";
+import ThinkingIndicator from "@/components/ThinkingIndicator";
 import {
   fetchPrivateDeskAgents,
   fetchPrivateDeskSession,
   startPrivateDeskStream,
   continuePrivateDeskStream,
 } from "@/lib/api";
-import type { Agent, ChatMessage, PrivateDeskSession } from "@/lib/types";
+import type { Agent, ChatMessage } from "@/lib/types";
 
 type ViewState = "select-agent" | "conversation";
 
-export default function PrivateDeskPage() {
+function PrivateDeskInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // State
   const [view, setView] = useState<ViewState>("select-agent");
@@ -34,12 +36,25 @@ export default function PrivateDeskPage() {
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load agents on mount
+  // Load agents on mount; then auto-select from ?agents= param if provided
   useEffect(() => {
     fetchPrivateDeskAgents()
-      .then(setAgents)
+      .then((loaded) => {
+        setAgents(loaded);
+        const agentsParam = searchParams.get("agents");
+        const promptParam = searchParams.get("prompt");
+        if (agentsParam) {
+          const agentName = agentsParam.split(",")[0];
+          const agent = loaded.find((a) => a.name === agentName);
+          if (agent) {
+            setSelectedAgent(agent);
+            setView("conversation");
+            if (promptParam) setInput(decodeURIComponent(promptParam));
+          }
+        }
+      })
       .catch(() => setError("Failed to load advisors. Is the backend running?"));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -61,13 +76,12 @@ export default function PrivateDeskPage() {
     inputRef.current?.focus();
   };
 
-  const handleLoadSession = async (session: PrivateDeskSession) => {
-    const agentName = session.agents[0];
-    const agent = agents.find((a) => a.name === agentName);
-    if (!agent) return;
-
+  const handleLoadSession = async (id: string, _topic?: string) => {
     try {
-      const full = await fetchPrivateDeskSession(session.id);
+      const full = await fetchPrivateDeskSession(id);
+      const agentName = full.agents[0];
+      const agent = agents.find((a) => a.name === agentName);
+      if (!agent) return;
       setSelectedAgent(agent);
       setSessionId(full.id);
       setMessages(
@@ -207,24 +221,24 @@ export default function PrivateDeskPage() {
   // ── Render: Agent Selection ──
   if (view === "select-agent") {
     return (
-      <div className="min-h-[100dvh] p-3 sm:p-4 md:p-8 bg-[#F8F9FA]">
+      <div className="min-h-[100dvh] p-3 sm:p-4 md:p-8 bg-council-navy">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
           <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
             <button
               onClick={() => router.push("/dashboard")}
-              className="text-gray-400 hover:text-gray-700 transition-colors text-sm shrink-0"
+              className="text-council-text-secondary hover:text-council-text-primary transition-colors text-sm shrink-0"
             >
               &larr; Back
             </button>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Private Desk</h1>
-              <p className="text-xs sm:text-sm text-gray-500">Choose your advisor for a 1-on-1 session</p>
+              <h1 className="text-xl sm:text-2xl font-bold text-council-text-primary">Private Desk</h1>
+              <p className="text-xs sm:text-sm text-council-text-secondary">Choose your advisor for a 1-on-1 session</p>
             </div>
           </div>
 
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+            <div className="mb-6 p-4 bg-red-900/20 border border-red-500/30 rounded-xl text-sm text-red-300">
               {error}
             </div>
           )}
@@ -232,9 +246,7 @@ export default function PrivateDeskPage() {
           {/* Agent boards */}
           {Object.entries(agentsByBoard).map(([board, boardAgents]) => (
             <div key={board} className="mb-8">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
-                {board}
-              </h2>
+              <h2 className="label-caps mb-3">{board}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {boardAgents.map((agent) => (
                   <button
@@ -247,10 +259,10 @@ export default function PrivateDeskPage() {
                         <span className="text-3xl">{agent.emoji}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline gap-2">
-                            <h3 className="font-bold text-gray-900">{agent.display_name}</h3>
-                            <span className="text-xs text-gray-400">{agent.role}</span>
+                            <h3 className="font-bold text-council-text-primary">{agent.display_name}</h3>
+                            <span className="text-xs text-council-text-secondary">{agent.role}</span>
                           </div>
-                          <p className="text-xs text-gray-500 mt-1 italic leading-relaxed line-clamp-2">
+                          <p className="text-xs text-council-text-secondary mt-1 italic leading-relaxed line-clamp-2">
                             &ldquo;{agent.core_belief}&rdquo;
                           </p>
                         </div>
@@ -274,14 +286,24 @@ export default function PrivateDeskPage() {
 
   // ── Render: Conversation ──
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-[#F8F9FA]">
+    <div className="min-h-[100dvh] flex bg-council-navy">
+      {/* Conversation History Sidebar */}
+      <ConversationSidebar
+        mode="private-desk"
+        activeSessionId={sessionId}
+        onSelect={handleLoadSession}
+        onNew={() => setView("select-agent")}
+      />
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-h-[100dvh] min-w-0">
       {/* Header */}
-      <div className="flex-shrink-0 p-3 sm:p-4 border-b border-white/30">
-        <GlassPanel className="max-w-3xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+      <div className="flex-shrink-0 p-3 sm:p-4 border-b border-council-border">
+        <GlassPanel className="px-3 sm:px-4 py-3 flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <button
               onClick={() => setView("select-agent")}
-              className="text-gray-400 hover:text-gray-700 transition-colors shrink-0"
+              className="text-council-text-secondary hover:text-council-text-primary transition-colors shrink-0"
             >
               &larr;
             </button>
@@ -289,17 +311,11 @@ export default function PrivateDeskPage() {
               <>
                 <span className="text-xl sm:text-2xl shrink-0">{selectedAgent.emoji}</span>
                 <div className="min-w-0">
-                  <p className="font-bold text-gray-900 text-sm truncate">{selectedAgent.display_name}</p>
-                  <p className="text-xs text-gray-400 hidden sm:block">{selectedAgent.role}</p>
+                  <p className="font-bold text-council-text-primary text-sm truncate">{selectedAgent.display_name}</p>
+                  <p className="text-xs text-council-text-secondary hidden sm:block">{selectedAgent.role}</p>
                 </div>
               </>
             )}
-          </div>
-          <div className="shrink-0">
-            <SessionHistory
-              currentSessionId={sessionId}
-              onSelectSession={handleLoadSession}
-            />
           </div>
         </GlassPanel>
       </div>
@@ -310,10 +326,10 @@ export default function PrivateDeskPage() {
           {messages.length === 0 && (
             <div className="text-center py-16">
               <span className="text-6xl">{selectedAgent?.emoji}</span>
-              <p className="text-gray-500 mt-4 text-sm">
+              <p className="text-council-text-secondary mt-4 text-sm">
                 {selectedAgent?.display_name} is ready. What would you like to discuss?
               </p>
-              <p className="text-gray-400 mt-2 text-xs italic">
+              <p className="text-council-text-tertiary mt-2 text-xs italic">
                 &ldquo;{selectedAgent?.core_belief}&rdquo;
               </p>
             </div>
@@ -331,7 +347,7 @@ export default function PrivateDeskPage() {
                 className={`
                   max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed
                   ${msg.sender_type === "user"
-                    ? "bg-gray-900 text-white rounded-tr-sm"
+                    ? "bg-council-navy-mid text-council-text-primary rounded-tr-sm border border-council-border"
                     : "glass rounded-tl-sm"
                   }
                 `}
@@ -352,21 +368,20 @@ export default function PrivateDeskPage() {
             </div>
           ))}
 
-          {isThinking && (
-            <div className="flex justify-start">
-              <span className="mr-2 text-xl">{selectedAgent?.emoji}</span>
+          {isThinking && selectedAgent && (
+            <div className="flex justify-start items-center gap-2">
+              <span className="text-xl">{selectedAgent.emoji}</span>
               <div className="glass px-4 py-3 rounded-2xl rounded-tl-sm">
-                <div className="flex gap-1.5 items-center h-4">
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                </div>
+                <ThinkingIndicator
+                  agentId={selectedAgent.name}
+                  color={selectedAgent.color}
+                />
               </div>
             </div>
           )}
 
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+            <div className="p-3 bg-red-900/20 border border-red-500/30 rounded-xl text-sm text-red-300">
               {error}
             </div>
           )}
@@ -387,7 +402,7 @@ export default function PrivateDeskPage() {
               placeholder={`Ask ${selectedAgent?.display_name ?? "your advisor"} anything...`}
               rows={1}
               disabled={isStreaming || isThinking}
-              className="flex-1 resize-none bg-transparent text-sm text-gray-900 placeholder-gray-400 outline-none min-h-[36px] max-h-32 py-2"
+              className="flex-1 resize-none bg-transparent text-sm text-council-text-primary placeholder:text-council-text-secondary outline-none min-h-[36px] max-h-32 py-2"
               style={{ fieldSizing: "content" } as React.CSSProperties}
             />
             <button
@@ -402,11 +417,24 @@ export default function PrivateDeskPage() {
               ↑
             </button>
           </GlassPanel>
-          <p className="text-center text-xs text-gray-400 mt-2">
+          <p className="text-center text-xs text-council-text-secondary mt-2">
             Enter to send · Shift+Enter for new line
           </p>
         </div>
       </div>
+      </div>{/* flex-1 main content */}
     </div>
+  );
+}
+
+export default function PrivateDeskPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[100dvh] bg-council-navy flex items-center justify-center">
+        <p className="text-council-text-secondary">Loading Private Desk...</p>
+      </div>
+    }>
+      <PrivateDeskInner />
+    </Suspense>
   );
 }

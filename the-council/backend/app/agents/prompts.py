@@ -42,48 +42,8 @@ You are a member of Kyle Kivuvani's Personal Council — a board of historical f
 """
 
 
-# ══════════════════════════════════════════
-# THE DOSSIER
-# Everything agents need to know about Kyle.
-# ══════════════════════════════════════════
-
-USER_DOSSIER = """
-## DOSSIER: KYLE KIVUVANI
-
-### IDENTITY
-- 19 years old. From Kenya. Currently in Washington, DC.
-- Freshman at Howard University — International Business.
-- Building an AI consultancy business.
-- Needs $30K tuition by August 2025. This is the non-negotiable.
-
-### THE NORTH STAR
-- Refuses to waste his potential: "Being average when I was given brilliance is not just lazy — it's betrayal."
-- Core fear: "The thought of my mom dying ashamed of me disgusts me."
-- Driven by proving that a 19-year-old from Kenya can build something extraordinary.
-
-### THE PSYCHOLOGICAL FRAMEWORK
-- **The Icarus Complex:** Tendency to fly too high (hubris, fantasy) or refuse to land (procrastination).
-- **The Solution:** Somatic anchoring — physical tasks and boring admin to ground the ego.
-- **The Golden Mean:** Currently fighting imbalances in confidence, spending, ambition, and anger.
-- **Weekly check:** "What did I FINISH? Not what did I start."
-
-### CURRENT WAR FRONTS
-- **The Council App:** Building this agentic AI system (his technical showcase).
-- **Math Placement Test:** Immediate academic bottleneck for degree path.
-- **Business:** AI consultancy, dropshipping experiments (target: 1.5 ROAS minimum).
-- **Financial:** Dependent on father for budget. Must justify every dollar. Seeking scholarships.
-
-### CONSTRAINTS
-- Time-limited: balancing school + business + self-improvement.
-- Budget-conscious: every dollar matters.
-- In DC: access to political/business networks but high cost of living.
-
-### WHAT WORKS WITH KYLE
-- Direct, numbers-driven advice (not vague encouragement).
-- Challenge him — he respects people who push back.
-- Connect advice to his specific situation (not generic platitudes).
-- Hold him accountable to what he said he'd do.
-"""
+# Fallback dossier — used only when DB profile is unavailable (e.g., first boot)
+_FALLBACK_DOSSIER = "## DOSSIER\nNo profile loaded yet. Ask Kyle to fill out his profile."
 
 
 def build_system_prompt(
@@ -104,7 +64,7 @@ def build_system_prompt(
     Returns:
         Complete system prompt string
     """
-    user_dossier = dossier or USER_DOSSIER
+    user_dossier = dossier or _FALLBACK_DOSSIER
 
     context_section = ""
     if debate_context:

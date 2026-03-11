@@ -11,10 +11,9 @@ from uuid import UUID
 # ── Requests ──
 
 class DebateRequest(BaseModel):
-    """Start or continue a War Room debate."""
+    """Start a War Room debate."""
     question: str = Field(..., min_length=1, max_length=2000)
     agents: list[str] = Field(default=[], max_length=5, description="Agent names. Empty = auto-select.")
-    session_id: Optional[UUID] = Field(default=None, description="Continue existing session.")
 
 
 class MessageRequest(BaseModel):

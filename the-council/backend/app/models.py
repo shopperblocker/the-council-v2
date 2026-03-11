@@ -56,7 +56,13 @@ class Insight(Base):
     agent_name: Mapped[str] = mapped_column(String(100))
     insight_type: Mapped[str] = mapped_column(String(50))  # "opportunity", "warning", "pattern", "consensus"
     title: Mapped[str] = mapped_column(String(300))
-    content: Mapped[str] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(Text)  # kept for backward compat
+    summary: Mapped[str] = mapped_column(Text, nullable=True)  # richer long-form summary
+    key_points: Mapped[list] = mapped_column(JSON, default=list, nullable=True)
+    recommended_actions: Mapped[list] = mapped_column(JSON, default=list, nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, default=list, nullable=True)
+    source_mode: Mapped[str] = mapped_column(String(30), nullable=True)  # "war_room" | "private_desk"
+    conversation_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("sessions.id"), nullable=True)
     priority: Mapped[str] = mapped_column(String(20), default="medium")  # "high", "medium", "low"
     context_ref: Mapped[str] = mapped_column(Text, nullable=True)
     viewed: Mapped[bool] = mapped_column(default=False)
@@ -236,4 +242,44 @@ class Order(Base):
     fees: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String(30))  # pending, shipped, delivered, completed
     tracking: Mapped[str] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ══════════════════════════════════════════
+# AUTHENTICATION
+# ══════════════════════════════════════════
+
+# ══════════════════════════════════════════
+# CLAW TASKS (Orchestrator Integration)
+# ══════════════════════════════════════════
+
+class ClawTask(Base):
+    """Agent tasks spawned by the Claw orchestrator (Telegram bot)."""
+    __tablename__ = "claw_tasks"
+
+    id: Mapped[str] = mapped_column(String(200), primary_key=True)  # slug-timestamp ID from Claw
+    description: Mapped[str] = mapped_column(Text)
+    project: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(30), default="running")  # running, done, blocked, killed
+    agent: Mapped[str] = mapped_column(String(50), default="claude-code")
+    task_type: Mapped[str] = mapped_column(String(30), default="general")  # ui, backend, infra, general
+    branch: Mapped[str] = mapped_column(String(200), nullable=True)
+    pr_number: Mapped[int] = mapped_column(Integer, nullable=True)
+    failure_reason: Mapped[str] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[str] = mapped_column(String(50))  # ISO-8601 from Claw
+    completed_at: Mapped[str] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class User(Base):
+    """Admin users for The Council — admin-only for now, multi-user later."""
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
+    role: Mapped[str] = mapped_column(String(30), default="admin")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

@@ -45,7 +45,12 @@ class AIService:
             system=system_prompt,
             messages=messages,
         )
-        return response.content[0].text
+        if not response.content:
+            raise ValueError("Anthropic returned empty content array")
+        block = response.content[0]
+        if not hasattr(block, "text"):
+            raise ValueError(f"Unexpected content block type: {block.type}")
+        return block.text
 
     async def stream(
         self,

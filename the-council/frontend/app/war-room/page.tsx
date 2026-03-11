@@ -1,21 +1,24 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import GlassPanel from "@/components/GlassPanel";
 import ChatMessage from "@/components/ChatMessage";
 import AgentCard from "@/components/AgentCard";
 import MobileDrawer from "@/components/MobileDrawer";
+import ConversationSidebar from "@/components/ConversationSidebar";
 import {
   fetchAgents,
+  fetchSession,
   startDebateStream,
   sendFollowUpStream,
   fetchUnreadInsightsCount,
 } from "@/lib/api";
 import type { Agent, ChatMessage as MessageType, DebateStartEvent } from "@/lib/types";
 
-export default function WarRoom() {
+function WarRoom() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Token accumulator for batched streaming updates (~60fps cap)
@@ -35,6 +38,14 @@ export default function WarRoom() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [synthesis, setSynthesis] = useState<string | null>(null);
   const [unreadInsights, setUnreadInsights] = useState(0);
+
+  // Pre-fill from ?agents=&prompt= URL params (used by AgentQuickLaunch)
+  useEffect(() => {
+    const agentsParam = searchParams.get("agents");
+    const promptParam = searchParams.get("prompt");
+    if (agentsParam) setSelectedAgents(agentsParam.split(",").filter(Boolean));
+    if (promptParam) setInput(decodeURIComponent(promptParam));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load agents and unread insights count on mount
   useEffect(() => {
@@ -205,6 +216,36 @@ export default function WarRoom() {
     inputRef.current?.focus();
   };
 
+  // Load a session from history
+  const handleLoadSession = async (id: string) => {
+    try {
+      streamController?.abort();
+      const session = await fetchSession(id);
+      setSessionId(session.id);
+      setTopic(session.topic || null);
+      setSelectedAgents(session.agents || []);
+      setSynthesis(null);
+      setIsDebating(false);
+      setSpeakingAgent(null);
+      setMessages(
+        (session.messages || []).map((m: { id: string | number; sender: string; sender_type: string; content: string }) => {
+          const agentInfo = agents.find((a) => a.name === m.sender);
+          return {
+            id: String(m.id),
+            sender: m.sender,
+            sender_type: m.sender_type as "user" | "agent",
+            content: m.content,
+            color: agentInfo?.color,
+            emoji: agentInfo?.emoji,
+            display_name: agentInfo?.display_name || m.sender,
+          };
+        })
+      );
+    } catch {
+      // silently fail — sidebar will just keep showing current state
+    }
+  };
+
   // Active agents in sidebar (memoized to avoid recomputing on every render)
   const sessionAgents = useMemo(
     () => agents.filter((a) => selectedAgents.includes(a.name)),
@@ -221,7 +262,7 @@ export default function WarRoom() {
   // Sidebar content (shared between desktop sidebar and mobile drawer)
   const sidebarContent = (
     <>
-      <div className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-3">
+      <div className="label-caps mb-3">
         {hasStarted ? "Strategic Council" : "Select Advisors"}
       </div>
 
@@ -236,7 +277,7 @@ export default function WarRoom() {
               onToggle={() => toggleAgent(agent.name)}
             />
           ))}
-          <p className="text-[10px] text-gray-400 mt-3 text-center">
+          <p className="text-[10px] text-council-text-tertiary mt-3 text-center">
             {selectedAgents.length === 0
               ? "Select agents or let AI choose"
               : `${selectedAgents.length} selected (max 5)`}
@@ -261,21 +302,19 @@ export default function WarRoom() {
         <div
           className="mt-4 p-3 rounded-xl"
           style={{
-            background: "linear-gradient(135deg, rgba(239,246,255,0.9), rgba(219,234,254,0.9))",
-            border: "1px solid rgba(147,197,253,0.4)",
+            background: "linear-gradient(135deg, rgba(15,30,53,0.9), rgba(10,22,40,0.9))",
+            border: "1px solid rgba(201,168,76,0.25)",
           }}
         >
-          <div className="text-[11px] font-bold uppercase tracking-widest text-blue-400 mb-2">
-            Strategic Question
-          </div>
-          <p className="text-sm text-blue-800 leading-relaxed">{topic}</p>
+          <div className="label-caps mb-2">Strategic Question</div>
+          <p className="text-sm text-council-text-primary leading-relaxed">{topic}</p>
         </div>
       )}
     </>
   );
 
   return (
-    <div className="h-[100dvh] p-3 sm:p-4 flex flex-col gap-3 sm:gap-4 max-w-[1440px] mx-auto bg-[#F8F9FA]">
+    <div className="h-[100dvh] p-3 sm:p-4 flex flex-col gap-3 sm:gap-4 max-w-[1440px] mx-auto bg-council-navy">
       {/* Header */}
       <GlassPanel className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
@@ -296,7 +335,7 @@ export default function WarRoom() {
           <div className="min-w-0">
             <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">War Room</h1>
             {topic && (
-              <p className="text-xs text-gray-500 mt-0.5 truncate max-w-[200px] sm:max-w-md">{topic}</p>
+              <p className="text-xs text-council-text-secondary mt-0.5 truncate max-w-[200px] sm:max-w-md">{topic}</p>
             )}
           </div>
         </div>
@@ -320,7 +359,7 @@ export default function WarRoom() {
           {sessionId && (
             <button
               onClick={handleNewDebate}
-              className="text-sm text-gray-500 hover:text-gray-800 transition-colors"
+              className="text-sm text-council-text-secondary hover:text-council-text-primary transition-colors"
             >
               <span className="hidden sm:inline">New Debate</span>
               <span className="sm:hidden">New</span>
@@ -336,6 +375,14 @@ export default function WarRoom() {
 
       {/* Main Layout */}
       <div className="flex gap-4 flex-1 min-h-0">
+        {/* Conversation History Sidebar */}
+        <ConversationSidebar
+          mode="war-room"
+          activeSessionId={sessionId}
+          onSelect={handleLoadSession}
+          onNew={handleNewDebate}
+        />
+
         {/* Desktop Sidebar — hidden on mobile */}
         <div className="hidden md:flex w-[280px] shrink-0 flex-col gap-4">
           <GlassPanel className="p-4 flex-1 overflow-y-auto">
@@ -347,14 +394,12 @@ export default function WarRoom() {
             <GlassPanel
               className="p-4 shrink-0"
               style={{
-                background: "linear-gradient(135deg, rgba(239,246,255,0.9), rgba(219,234,254,0.9))",
-                border: "1px solid rgba(147,197,253,0.4)",
+                background: "linear-gradient(135deg, rgba(15,30,53,0.9), rgba(10,22,40,0.9))",
+                border: "1px solid rgba(201,168,76,0.25)",
               } as React.CSSProperties}
             >
-              <div className="text-[11px] font-bold uppercase tracking-widest text-blue-400 mb-2">
-                Strategic Question
-              </div>
-              <p className="text-sm text-blue-800 leading-relaxed">{topic}</p>
+              <div className="label-caps mb-2">Strategic Question</div>
+              <p className="text-sm text-council-text-primary leading-relaxed">{topic}</p>
             </GlassPanel>
           )}
         </div>
@@ -367,10 +412,10 @@ export default function WarRoom() {
               <div className="h-full flex items-center justify-center">
                 <div className="text-center px-4">
                   <div className="text-4xl sm:text-5xl mb-4">&#9876;&#65039;</div>
-                  <h2 className="text-base sm:text-lg font-semibold text-gray-700 mb-2">
+                  <h2 className="text-base sm:text-lg font-semibold text-council-text-primary mb-2">
                     The War Room awaits
                   </h2>
-                  <p className="text-sm text-gray-400 max-w-sm">
+                  <p className="text-sm text-council-text-secondary max-w-sm">
                     Ask a strategic question. Your advisors will debate from their
                     unique perspectives, challenge each other, and deliver actionable insight.
                   </p>
@@ -378,8 +423,14 @@ export default function WarRoom() {
               </div>
             ) : (
               <div>
-                {messages.map((msg) => (
-                  <ChatMessage key={msg.id} message={msg} />
+                {messages.map((msg, i) => (
+                  <div key={msg.id}>
+                    {/* Gold divider between agent turns (not before user messages or the first message) */}
+                    {i > 0 && msg.sender_type === "agent" && messages[i - 1]?.sender_type === "agent" && messages[i - 1]?.sender !== msg.sender && (
+                      <div className="rule-gold my-3" />
+                    )}
+                    <ChatMessage message={msg} />
+                  </div>
                 ))}
 
                 {/* Synthesis card — shown after debate completes */}
@@ -387,21 +438,16 @@ export default function WarRoom() {
                   <div
                     className="mt-4 p-4 rounded-xl"
                     style={{
-                      background: "linear-gradient(135deg, rgba(124,58,237,0.08), rgba(201,162,39,0.06))",
-                      border: "1px solid rgba(124,58,237,0.2)",
+                      background: "linear-gradient(135deg, rgba(15,30,53,0.95), rgba(10,22,40,0.95))",
+                      border: "1px solid rgba(201,168,76,0.3)",
                     }}
                   >
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-sm">&#9876;&#65039;</span>
-                      <span
-                        className="text-[11px] font-bold uppercase tracking-widest"
-                        style={{ color: "#7C3AED" }}
-                      >
-                        Council Synthesis
-                      </span>
-                      <span className="text-[10px] text-gray-400 ml-auto">via Opus</span>
+                      <span className="label-caps">Council Synthesis</span>
+                      <span className="text-[10px] text-council-text-secondary ml-auto">via Opus</span>
                     </div>
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                    <p className="text-sm text-council-text-primary leading-relaxed whitespace-pre-wrap">
                       {synthesis}
                     </p>
                   </div>
@@ -417,13 +463,13 @@ export default function WarRoom() {
             {/* Typing indicator */}
             <div className="h-5 mb-2">
               {speakingAgent && speakingAgentInfo && (
-                <p className="text-xs text-gray-400 italic animate-fade-in truncate">
+                <p className="text-xs text-council-text-secondary italic animate-fade-in truncate">
                   {speakingAgentInfo.emoji}{" "}
                   {speakingAgentInfo.display_name} is speaking...
                 </p>
               )}
               {!speakingAgent && isDebating && (
-                <p className="text-xs text-gray-400 italic">Synthesizing...</p>
+                <p className="text-xs text-council-text-secondary italic">Synthesizing...</p>
               )}
             </div>
 
@@ -440,7 +486,7 @@ export default function WarRoom() {
                     : "Ask a strategic question..."
                 }
                 disabled={isDebating}
-                className="glass-input flex-1 px-3 sm:px-5 py-3 sm:py-3.5 text-sm text-gray-800 placeholder:text-gray-400 disabled:opacity-50"
+                className="glass-input flex-1 px-3 sm:px-5 py-3 sm:py-3.5 text-sm text-council-text-primary placeholder:text-council-text-secondary disabled:opacity-50"
               />
               <button
                 onClick={handleSubmit}
@@ -454,5 +500,17 @@ export default function WarRoom() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function WarRoomPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[100dvh] bg-council-navy flex items-center justify-center">
+        <p className="text-council-text-secondary">Loading War Room...</p>
+      </div>
+    }>
+      <WarRoom />
+    </Suspense>
   );
 }

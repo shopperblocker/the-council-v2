@@ -21,6 +21,7 @@ from app.routes.academy import router as academy_router
 from app.routes.workshop import router as workshop_router
 from app.routes.content import router as content_router
 from app.routes.business import router as business_router
+from app.routes.claw import router as claw_router
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -113,6 +114,7 @@ app.include_router(academy_router)
 app.include_router(workshop_router)
 app.include_router(content_router)
 app.include_router(business_router)
+app.include_router(claw_router)
 
 
 @app.get("/api/health")

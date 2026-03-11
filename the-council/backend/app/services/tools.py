@@ -8,7 +8,10 @@ Web search uses Tavily when TAVILY_API_KEY is set; falls back to curated results
 
 import json
 import ast
+import logging
 import operator
+
+logger = logging.getLogger(__name__)
 
 
 # ── Tool Definitions (Anthropic tool_use format) ──
@@ -296,8 +299,8 @@ async def execute_tool(name: str, tool_input: dict) -> str:
         if tavily_key:
             try:
                 return await _web_search_tavily(query, tavily_key)
-            except Exception:
-                pass  # Fall through to curated fallback
+            except Exception as e:
+                logger.warning("Tavily web search failed (falling back to curated): %s", e)
         q_lower = query.lower()
         if any(kw in q_lower for kw in _FINANCE_KEYWORDS):
             return _web_search_finance_fallback(query)

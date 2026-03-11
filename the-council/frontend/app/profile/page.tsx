@@ -32,27 +32,27 @@ export default function ProfilePage() {
 
   if (!profile) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-[#F8F9FA]">
-        <p className="text-gray-400">Loading profile...</p>
+      <div className="min-h-[100dvh] flex items-center justify-center bg-council-navy">
+        <p className="text-council-text-secondary">Loading profile...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-[100dvh] p-3 sm:p-6 bg-[#F8F9FA]">
+    <div className="min-h-[100dvh] p-3 sm:p-6 bg-council-navy">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6 sm:mb-8">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push("/dashboard")}
-              className="text-gray-400 hover:text-gray-700 transition-colors text-sm"
+              className="text-council-text-secondary hover:text-council-text-primary transition-colors text-sm"
             >
               &larr; Back
             </button>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Your Profile</h1>
+            <h1 className="text-xl sm:text-2xl font-display font-bold text-council-text-primary">Your Profile</h1>
           </div>
-          <div className="text-xs text-gray-400">
+          <div className="text-xs text-council-gold">
             {saving ? "Saving..." : saved ? "Saved" : ""}
           </div>
         </div>
@@ -60,7 +60,7 @@ export default function ProfilePage() {
         <div className="space-y-4 sm:space-y-6">
           {/* Identity */}
           <GlassPanel className="p-4 sm:p-6">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">Identity</h2>
+            <h2 className="label-caps mb-4">Identity</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Name" value={profile.name} onSave={(v) => handleSave("name", v)} />
               <Field label="Age" value={String(profile.age)} onSave={(v) => handleSave("age", parseInt(v))} />
@@ -74,14 +74,14 @@ export default function ProfilePage() {
 
           {/* North Star */}
           <GlassPanel className="p-4 sm:p-6">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">North Star</h2>
+            <h2 className="label-caps mb-4">North Star</h2>
             <TextArea label="Driving motivation" value={profile.north_star} onSave={(v) => handleSave("north_star", v)} />
             <TextArea label="Core fear" value={profile.core_fear} onSave={(v) => handleSave("core_fear", v)} />
           </GlassPanel>
 
           {/* Financial */}
           <GlassPanel className="p-4 sm:p-6">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">Financial</h2>
+            <h2 className="label-caps mb-4">Financial</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Tuition Target ($)" value={String(profile.tuition_target)} onSave={(v) => handleSave("tuition_target", parseFloat(v))} />
               <Field label="Deadline" value={profile.tuition_deadline} onSave={(v) => handleSave("tuition_deadline", v)} />
@@ -91,7 +91,7 @@ export default function ProfilePage() {
 
           {/* War Fronts */}
           <GlassPanel className="p-4 sm:p-6">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">War Fronts</h2>
+            <h2 className="label-caps mb-4">War Fronts</h2>
             <KeyValueEditor
               data={profile.war_fronts}
               onSave={(v) => handleSave("war_fronts", v)}
@@ -100,20 +100,20 @@ export default function ProfilePage() {
 
           {/* What Works */}
           <GlassPanel className="p-4 sm:p-6">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">What Works With You</h2>
+            <h2 className="label-caps mb-4">What Works With You</h2>
             <ListEditor items={profile.what_works} onSave={(v) => handleSave("what_works", v)} />
           </GlassPanel>
 
           {/* Constraints */}
           <GlassPanel className="p-4 sm:p-6">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">Constraints</h2>
+            <h2 className="label-caps mb-4">Constraints</h2>
             <ListEditor items={profile.constraints} onSave={(v) => handleSave("constraints", v)} />
           </GlassPanel>
 
           {/* Custom Sections */}
           <GlassPanel className="p-4 sm:p-6">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">Custom Sections</h2>
-            <p className="text-xs text-gray-400 mb-3">Add your own context that agents should know about.</p>
+            <h2 className="label-caps mb-4">Custom Sections</h2>
+            <p className="text-xs text-council-text-secondary mb-3">Add your own context that agents should know about.</p>
             <KeyValueEditor
               data={profile.custom_sections}
               onSave={(v) => handleSave("custom_sections", v)}
@@ -135,7 +135,7 @@ function Field({ label, value, onSave }: { label: string; value: string; onSave:
 
   return (
     <div>
-      <label className="text-xs text-gray-500 block mb-1">{label}</label>
+      <label className="text-xs text-council-text-secondary block mb-1">{label}</label>
       {editing ? (
         <input
           autoFocus
@@ -148,9 +148,9 @@ function Field({ label, value, onSave }: { label: string; value: string; onSave:
       ) : (
         <button
           onClick={() => { setDraft(value); setEditing(true); }}
-          className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-white/50 rounded-lg transition-colors"
+          className="w-full text-left px-3 py-2 text-sm text-council-text-primary hover:bg-council-surface/50 rounded-lg transition-colors"
         >
-          {value || <span className="text-gray-400 italic">Click to edit</span>}
+          {value || <span className="text-council-text-tertiary italic">Click to edit</span>}
         </button>
       )}
     </div>
@@ -165,7 +165,7 @@ function TextArea({ label, value, onSave }: { label: string; value: string; onSa
 
   return (
     <div className="mb-4">
-      <label className="text-xs text-gray-500 block mb-1">{label}</label>
+      <label className="text-xs text-council-text-secondary block mb-1">{label}</label>
       {editing ? (
         <textarea
           autoFocus
@@ -177,9 +177,9 @@ function TextArea({ label, value, onSave }: { label: string; value: string; onSa
       ) : (
         <button
           onClick={() => { setDraft(value); setEditing(true); }}
-          className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-white/50 rounded-lg transition-colors whitespace-pre-wrap"
+          className="w-full text-left px-3 py-2 text-sm text-council-text-primary hover:bg-council-surface/50 rounded-lg transition-colors whitespace-pre-wrap break-words"
         >
-          {value || <span className="text-gray-400 italic">Click to edit</span>}
+          {value || <span className="text-council-text-tertiary italic">Click to edit</span>}
         </button>
       )}
     </div>
@@ -234,7 +234,7 @@ function KeyValueEditor({
           />
           <button
             onClick={() => save(entries.filter((_, j) => j !== i))}
-            className="text-red-400 hover:text-red-600 px-2 py-2 text-sm shrink-0"
+            className="text-council-gold/60 hover:text-red-400 px-2 py-2 text-sm shrink-0"
           >
             &times;
           </button>
@@ -297,7 +297,7 @@ function ListEditor({ items, onSave }: { items: string[]; onSave: (v: string[]) 
           />
           <button
             onClick={() => save(list.filter((_, j) => j !== i))}
-            className="text-red-400 hover:text-red-600 px-2 py-2 text-sm shrink-0"
+            className="text-council-gold/60 hover:text-red-400 px-2 py-2 text-sm shrink-0"
           >
             &times;
           </button>

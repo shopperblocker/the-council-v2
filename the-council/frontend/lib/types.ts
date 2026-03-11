@@ -234,39 +234,44 @@ export interface Insight {
   insight_type: string;
   title: string;
   content: string;
+  summary?: string;
+  key_points?: string[];
+  recommended_actions?: string[];
+  tags?: string[];
+  source_mode?: string;
+  conversation_id?: string;
   priority: string;
   viewed: boolean;
   acted_on: boolean;
   created_at: string;
 }
 
-// Agent color map for quick lookups
-export const AGENT_COLORS: Record<string, string> = {
-  Rockefeller: "#059669",
-  Napoleon: "#DC2626",
-  Bismarck: "#64748B",
-  Madam_Walker: "#D97706",
-  Marcus_Aurelius: "#7C3AED",
-  Frankl: "#06B6D4",
-  Wim_Hof: "#0EA5E9",
-  Feynman: "#F59E0B",
-  Da_Vinci: "#EC4899",
-  Socrates: "#8B5CF6",
-  Ben_Franklin: "#F59E0B",
-  Steve_Jobs: "#1F2937",
-};
+// ── Claw Orchestrator ──
 
-export const AGENT_EMOJIS: Record<string, string> = {
-  Rockefeller: "💰",
-  Napoleon: "⚔️",
-  Bismarck: "🏛️",
-  Madam_Walker: "👑",
-  Marcus_Aurelius: "🏛️",
-  Frankl: "🔮",
-  Wim_Hof: "🧊",
-  Feynman: "⚛️",
-  Da_Vinci: "🎨",
-  Socrates: "🪰",
-  Ben_Franklin: "📚",
-  Steve_Jobs: "🍎",
-};
+export interface ClawTask {
+  id: string;
+  description: string;
+  project: string;
+  status: "running" | "done" | "blocked" | "killed";
+  agent: string;
+  task_type: string;
+  branch: string | null;
+  pr_number: number | null;
+  failure_reason: string | null;
+  retry_count: number;
+  notes: string;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClawSummary {
+  total: number;
+  running: number;
+  done: number;
+  blocked: number;
+  killed: number;
+}
+
+// Agent colors: use AGENT_COLORS from @/lib/design-system.ts (single source of truth)

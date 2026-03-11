@@ -140,6 +140,13 @@ class WarRoomOrchestrator:
                     full_response += token
                     yield self._sse("agent_token", {"agent": agent.name, "token": token})
 
+                # Validate non-empty response
+                if not full_response.strip():
+                    logger.warning("Agent %s returned empty response", agent.name)
+                    yield self._sse("error", {"message": f"{agent.display_name} returned no response"})
+                    yield self._sse("agent_end", {"agent": agent.name})
+                    continue
+
                 # Save agent message to DB
                 agent_msg = Message(
                     session_id=session.id,
@@ -177,6 +184,7 @@ class WarRoomOrchestrator:
                 yield self._sse("synthesis", {"content": synthesis})
             except Exception as e:
                 logger.warning("Synthesis failed: %s", e)
+                yield self._sse("error", {"message": f"Synthesis unavailable: {str(e)}"})
 
             # Emit round end
             yield self._sse("round_end", {
@@ -289,6 +297,13 @@ class WarRoomOrchestrator:
                     full_response += token
                     yield self._sse("agent_token", {"agent": agent.name, "token": token})
 
+                # Validate non-empty response
+                if not full_response.strip():
+                    logger.warning("Agent %s returned empty follow-up response", agent.name)
+                    yield self._sse("error", {"message": f"{agent.display_name} returned no response"})
+                    yield self._sse("agent_end", {"agent": agent.name})
+                    continue
+
                 # Save
                 agent_msg = Message(
                     session_id=session.id,
@@ -324,6 +339,7 @@ class WarRoomOrchestrator:
                     yield self._sse("synthesis", {"content": synthesis})
             except Exception as e:
                 logger.warning("Follow-up synthesis failed: %s", e)
+                yield self._sse("error", {"message": f"Synthesis unavailable: {str(e)}"})
 
             yield self._sse("round_end", {
                 "session_id": str(session.id),

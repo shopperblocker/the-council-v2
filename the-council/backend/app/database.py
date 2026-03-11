@@ -37,6 +37,8 @@ def _create_engine():
             echo=False,
             pool_size=5,
             max_overflow=10,
+            pool_pre_ping=True,
+            pool_recycle=3600,
         )
 
 
@@ -48,7 +50,7 @@ REQUIRED_TABLES = {
     "sessions", "messages", "shared_memory", "insights",
     "user_profiles", "financial_accounts", "transactions", "portfolio_positions",
     "plans", "milestones", "study_paths", "study_topics",
-    "products", "orders",
+    "products", "orders", "users", "claw_tasks",
 }
 
 

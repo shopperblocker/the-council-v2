@@ -23,6 +23,8 @@ import type {
   Product,
   BusinessOrder,
   Insight,
+  ClawTask,
+  ClawSummary,
 } from "./types";
 
 // ── Type Guards ──
@@ -239,6 +241,23 @@ export async function markInsightViewed(id: number): Promise<void> {
 
 export async function markInsightActedOn(id: number): Promise<void> {
   await fetch(`${API_BASE}/insights/${id}/acted`, { method: "POST" });
+}
+
+export async function fetchAllInsights(limit = 50, offset = 0): Promise<Insight[]> {
+  const res = await fetch(`${API_BASE}/insights/all?limit=${limit}&offset=${offset}`);
+  if (!res.ok) throw new Error("Failed to fetch insights");
+  return res.json();
+}
+
+export async function extractInsights(conversationId: string): Promise<Insight[]> {
+  const res = await fetch(`${API_BASE}/insights/extract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
+  if (!res.ok) throw new Error("Failed to extract insights");
+  const data = await res.json();
+  return data.insights ?? [];
 }
 
 // ── Generic SSE Stream for AI-powered endpoints ──
@@ -499,4 +518,27 @@ export function continuePrivateDeskStream(
     });
 
   return controller;
+}
+
+// ── Claw Orchestrator ──
+
+export async function fetchClawTasks(status?: string): Promise<ClawTask[]> {
+  const url = status
+    ? `${API_BASE}/claw/tasks?status=${status}`
+    : `${API_BASE}/claw/tasks`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch Claw tasks");
+  return res.json();
+}
+
+export async function fetchClawSummary(): Promise<ClawSummary> {
+  const res = await fetch(`${API_BASE}/claw/summary`);
+  if (!res.ok) throw new Error("Failed to fetch Claw summary");
+  return res.json();
+}
+
+export async function fetchClawTask(taskId: string): Promise<ClawTask> {
+  const res = await fetch(`${API_BASE}/claw/tasks/${taskId}`);
+  if (!res.ok) throw new Error("Failed to fetch Claw task");
+  return res.json();
 }
