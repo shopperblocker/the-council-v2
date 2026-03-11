@@ -236,11 +236,13 @@ export async function fetchUnreadInsightsCount(): Promise<number> {
 }
 
 export async function markInsightViewed(id: number): Promise<void> {
-  await fetch(`${API_BASE}/insights/${id}/viewed`, { method: "POST" });
+  const res = await fetch(`${API_BASE}/insights/${id}/viewed`, { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to mark insight viewed: ${res.status}`);
 }
 
 export async function markInsightActedOn(id: number): Promise<void> {
-  await fetch(`${API_BASE}/insights/${id}/acted`, { method: "POST" });
+  const res = await fetch(`${API_BASE}/insights/${id}/acted`, { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to mark insight acted on: ${res.status}`);
 }
 
 export async function fetchAllInsights(limit = 50, offset = 0): Promise<Insight[]> {

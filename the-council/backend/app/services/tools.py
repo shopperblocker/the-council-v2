@@ -156,23 +156,26 @@ async def _fetch_price_http(ticker: str) -> dict:
             "Accept": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
 
-    result = data["chart"]["result"][0]
-    meta = result["meta"]
-    price = round(float(meta["regularMarketPrice"]), 2)
-    prev_close = round(float(meta.get("previousClose", price)), 2)
-    change = round(price - prev_close, 2)
-    change_pct = round((change / prev_close) * 100, 2) if prev_close else 0
+        result = data["chart"]["result"][0]
+        meta = result["meta"]
+        price = round(float(meta["regularMarketPrice"]), 2)
+        prev_close = round(float(meta.get("previousClose", price)), 2)
+        change = round(price - prev_close, 2)
+        change_pct = round((change / prev_close) * 100, 2) if prev_close else 0
 
-    return {
-        "ticker": ticker,
-        "price": price,
-        "change": change,
-        "change_pct": change_pct,
-        "currency": meta.get("currency", "USD"),
-    }
+        return {
+            "ticker": ticker,
+            "price": price,
+            "change": change,
+            "change_pct": change_pct,
+            "currency": meta.get("currency", "USD"),
+        }
+    except (urllib.error.URLError, json.JSONDecodeError, KeyError, IndexError, ValueError) as e:
+        raise RuntimeError(f"HTTP price fetch failed for {ticker}: {e}") from e
 
 
 # ── Web Search (Tavily live search with curated fallback) ──
@@ -182,7 +185,7 @@ def _get_tavily_key() -> str | None:
     try:
         from app.config import get_settings
         return get_settings().tavily_api_key
-    except Exception:
+    except (ImportError, AttributeError):
         return None
 
 
@@ -285,6 +288,7 @@ async def execute_tool(name: str, tool_input: dict) -> str:
                 return json.dumps(result)
             except Exception as e:
                 last_error = e
+                logger.debug("Price fetch via %s failed: %s", fetch_fn.__name__, e)
                 continue
 
         return json.dumps({

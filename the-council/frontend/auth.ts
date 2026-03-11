@@ -8,7 +8,7 @@ async function getUserByEmail(email: string) {
   const { Pool } = await import("pg");
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL?.includes("railway") ? { rejectUnauthorized: false } : false,
+    ssl: process.env.DATABASE_URL?.includes("railway") ? true : false,
   });
   try {
     const result = await pool.query(

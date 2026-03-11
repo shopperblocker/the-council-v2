@@ -26,6 +26,7 @@ from app.services.ai import get_ai_service
 from app.services.profile import ProfileService
 from app.services.memory import MemoryService
 from app.services.insights import InsightService
+from app.utils.sse import format_sse
 
 
 class WarRoomOrchestrator:
@@ -69,7 +70,7 @@ class WarRoomOrchestrator:
             if agent:
                 agents.append(agent)
         if not agents:
-            yield self._sse("error", {"message": "No valid agents selected."})
+            yield format_sse("error", {"message": "No valid agents selected."})
             return
 
         # Step 2: Create session
@@ -93,7 +94,7 @@ class WarRoomOrchestrator:
         await self.db.flush()
 
         # Emit debate start event
-        yield self._sse("debate_start", {
+        yield format_sse("debate_start", {
             "session_id": str(session.id),
             "agents": [
                 {"name": a.name, "display_name": a.display_name, "emoji": a.emoji, "color": a.color, "role": a.role}
@@ -121,7 +122,7 @@ class WarRoomOrchestrator:
                 )
 
                 # Emit agent start
-                yield self._sse("agent_start", {
+                yield format_sse("agent_start", {
                     "agent": agent.name,
                     "display_name": agent.display_name,
                     "emoji": agent.emoji,
@@ -138,13 +139,13 @@ class WarRoomOrchestrator:
                     temperature=agent.temperature,
                 ):
                     full_response += token
-                    yield self._sse("agent_token", {"agent": agent.name, "token": token})
+                    yield format_sse("agent_token", {"agent": agent.name, "token": token})
 
                 # Validate non-empty response
                 if not full_response.strip():
                     logger.warning("Agent %s returned empty response", agent.name)
-                    yield self._sse("error", {"message": f"{agent.display_name} returned no response"})
-                    yield self._sse("agent_end", {"agent": agent.name})
+                    yield format_sse("error", {"message": f"{agent.display_name} returned no response"})
+                    yield format_sse("agent_end", {"agent": agent.name})
                     continue
 
                 # Save agent message to DB
@@ -175,19 +176,19 @@ class WarRoomOrchestrator:
                 })
 
                 # Emit agent end
-                yield self._sse("agent_end", {"agent": agent.name})
+                yield format_sse("agent_end", {"agent": agent.name})
 
             # Step 5: Synthesize with Opus and emit
             synthesis = ""
             try:
                 synthesis = await self.ai.synthesize_debate(question, agent_responses)
-                yield self._sse("synthesis", {"content": synthesis})
+                yield format_sse("synthesis", {"content": synthesis})
             except Exception as e:
                 logger.warning("Synthesis failed: %s", e)
-                yield self._sse("error", {"message": f"Synthesis unavailable: {str(e)}"})
+                yield format_sse("error", {"message": f"Synthesis unavailable: {str(e)}"})
 
             # Emit round end
-            yield self._sse("round_end", {
+            yield format_sse("round_end", {
                 "round": 1,
                 "session_id": str(session.id),
                 "message_count": len(prior_messages),
@@ -199,8 +200,8 @@ class WarRoomOrchestrator:
         except Exception as e:
             await self.db.rollback()
             logger.error("War Room debate failed: %s", e, exc_info=True)
-            yield self._sse("error", {"message": f"Debate failed: {str(e)}"})
-            yield self._sse("round_end", {
+            yield format_sse("error", {"message": f"Debate failed: {str(e)}"})
+            yield format_sse("round_end", {
                 "round": 1,
                 "session_id": str(session.id),
                 "message_count": len(prior_messages),
@@ -222,7 +223,7 @@ class WarRoomOrchestrator:
         result = await self.db.execute(select(Session).where(Session.id == session_id))
         session = result.scalar_one_or_none()
         if not session:
-            yield self._sse("error", {"message": "Session not found."})
+            yield format_sse("error", {"message": "Session not found."})
             return
 
         # Save user follow-up
@@ -281,7 +282,7 @@ class WarRoomOrchestrator:
                     dossier=dossier, memory_context=full_memory_context,
                 )
 
-                yield self._sse("agent_start", {
+                yield format_sse("agent_start", {
                     "agent": agent.name,
                     "display_name": agent.display_name,
                     "emoji": agent.emoji,
@@ -295,13 +296,13 @@ class WarRoomOrchestrator:
                     temperature=agent.temperature,
                 ):
                     full_response += token
-                    yield self._sse("agent_token", {"agent": agent.name, "token": token})
+                    yield format_sse("agent_token", {"agent": agent.name, "token": token})
 
                 # Validate non-empty response
                 if not full_response.strip():
                     logger.warning("Agent %s returned empty follow-up response", agent.name)
-                    yield self._sse("error", {"message": f"{agent.display_name} returned no response"})
-                    yield self._sse("agent_end", {"agent": agent.name})
+                    yield format_sse("error", {"message": f"{agent.display_name} returned no response"})
+                    yield format_sse("agent_end", {"agent": agent.name})
                     continue
 
                 # Save
@@ -327,7 +328,7 @@ class WarRoomOrchestrator:
                     "content": full_response,
                 })
 
-                yield self._sse("agent_end", {"agent": agent.name})
+                yield format_sse("agent_end", {"agent": agent.name})
 
             # Synthesize follow-up round
             synthesis = ""
@@ -336,12 +337,12 @@ class WarRoomOrchestrator:
                     synthesis = await self.ai.synthesize_debate(
                         f"{session.topic} — follow-up: {content}", agent_responses
                     )
-                    yield self._sse("synthesis", {"content": synthesis})
+                    yield format_sse("synthesis", {"content": synthesis})
             except Exception as e:
                 logger.warning("Follow-up synthesis failed: %s", e)
-                yield self._sse("error", {"message": f"Synthesis unavailable: {str(e)}"})
+                yield format_sse("error", {"message": f"Synthesis unavailable: {str(e)}"})
 
-            yield self._sse("round_end", {
+            yield format_sse("round_end", {
                 "session_id": str(session.id),
                 "message_count": len(prior_messages),
                 "has_synthesis": bool(synthesis),
@@ -352,17 +353,9 @@ class WarRoomOrchestrator:
         except Exception as e:
             await self.db.rollback()
             logger.error("War Room follow-up failed: %s", e, exc_info=True)
-            yield self._sse("error", {"message": f"Follow-up failed: {str(e)}"})
-            yield self._sse("round_end", {
+            yield format_sse("error", {"message": f"Follow-up failed: {str(e)}"})
+            yield format_sse("round_end", {
                 "session_id": str(session.id),
                 "message_count": len(prior_messages),
             })
 
-    def _sse(self, event: str, data: dict) -> str:
-        """Format a Server-Sent Event.
-
-        Replaces literal newlines in the JSON so multi-line agent tokens
-        don't break SSE parsers that split on newlines.
-        """
-        json_str = json.dumps(data).replace("\n", "\\n")
-        return f"event: {event}\ndata: {json_str}\n\n"

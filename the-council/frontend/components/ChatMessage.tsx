@@ -14,7 +14,7 @@ function ChatMessage({ message }: ChatMessageProps) {
 
   // Memoize markdown parsing — expensive during streaming (1000+ renders per response)
   const renderedContent = useMemo(
-    () => <ReactMarkdown>{message.content}</ReactMarkdown>,
+    () => <ReactMarkdown skipHtml>{message.content}</ReactMarkdown>,
     [message.content]
   );
 

@@ -4,6 +4,7 @@ Insights Service: Agent-generated autonomous insights.
 After conversations, agents can flag patterns, opportunities, and warnings.
 """
 
+import json
 import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +69,6 @@ class InsightService:
         conversation_id: str | None = None,
     ) -> Insight | None:
         """Use Haiku to extract structured insights from a conversation turn."""
-        import json
         ai = get_ai_service()
 
         prompt = f"""Analyze this conversation turn for insights worth flagging to Kyle.
@@ -131,7 +131,6 @@ If nothing worth flagging, respond with: null"""
 
     async def extract_from_session(self, session_id: str) -> list[Insight]:
         """Manually trigger insight extraction for a full session."""
-        import json
         from sqlalchemy import text
         ai = get_ai_service()
 

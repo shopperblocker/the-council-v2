@@ -15,10 +15,7 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 
-def _sse(event: str, data: dict) -> str:
-    """Format a Server-Sent Event with safe newline escaping."""
-    json_str = json.dumps(data).replace("\n", "\\n")
-    return f"event: {event}\ndata: {json_str}\n\n"
+from app.utils.sse import format_sse as _sse
 
 from app.agents.registry import AGENTS
 from app.agents.prompts import build_private_desk_prompt

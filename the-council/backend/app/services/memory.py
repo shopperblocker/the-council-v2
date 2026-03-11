@@ -4,6 +4,7 @@ Memory Service: Persistent cross-session memory for The Council.
 Stores facts extracted from conversations so agents can recall prior context.
 """
 
+import json
 import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -135,7 +136,6 @@ If nothing worth remembering, respond with: []"""
                 temperature=0.0,
             )
 
-            import json
             cleaned = response.strip().strip("`").strip()
             if cleaned.startswith("json"):
                 cleaned = cleaned[4:].strip()
