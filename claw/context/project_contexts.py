@@ -9,7 +9,7 @@ from pathlib import Path
 PROJECTS: dict[str, dict] = {
     "the-council": {
         "name": "The Council",
-        "repo_path": str(Path.home() / "Downloads" / "the-council-v2"),
+        "repo_path": str(Path.home() / "the-council-v2"),
         "stack": "Next.js 14 · FastAPI · PostgreSQL · Tailwind · TypeScript",
         "vps_path": None,
         "railway_url": None,  # set from env if needed
@@ -36,7 +36,7 @@ PROJECTS: dict[str, dict] = {
     },
     "claw": {
         "name": "Claw",
-        "repo_path": str(Path.home() / "Downloads" / "the-council-v2" / "claw"),
+        "repo_path": str(Path.home() / "the-council-v2" / "claw"),
         "stack": "Python · python-telegram-bot · tmux",
         "vps_path": None,
         "railway_url": None,
