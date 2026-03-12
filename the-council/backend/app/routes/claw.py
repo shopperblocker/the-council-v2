@@ -62,9 +62,10 @@ async def list_tasks(
     db: AsyncSession = Depends(get_db),
 ):
     """List Claw tasks, optionally filtered by status."""
-    query = select(ClawTask).order_by(ClawTask.created_at.desc()).limit(limit)
+    query = select(ClawTask)
     if status:
         query = query.where(ClawTask.status == status)
+    query = query.order_by(ClawTask.created_at.desc()).limit(limit)
     result = await db.execute(query)
     return [_serialize(t) for t in result.scalars().all()]
 

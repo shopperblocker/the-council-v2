@@ -43,7 +43,12 @@ def append_to_memory(section: str, entry: str) -> None:
     if f"## {section}" in content:
         idx = content.index(f"## {section}") + len(f"## {section}")
         # Skip to end of the section header line
-        next_newline = content.index("\n", idx)
+        next_newline = content.find("\n", idx)
+        if next_newline == -1:
+            # Section heading is the last line — append after it
+            content += "\n" + new_entry + "\n"
+            MEMORY_FILE.write_text(content, encoding="utf-8")
+            return
         content = content[: next_newline + 1] + new_entry + "\n" + content[next_newline + 1:]
     else:
         # Section doesn't exist — append at end

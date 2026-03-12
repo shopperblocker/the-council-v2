@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 // Public routes that don't require authentication
 const PUBLIC_ROUTES = ["/", "/login"];
-const PUBLIC_PREFIXES = ["/api/", "/_next", "/favicon", "/public", "/demo"];
+const PUBLIC_PREFIXES = ["/_next", "/favicon", "/public", "/demo"];
 
 // When AUTH_SECRET is set, use NextAuth middleware for session checks.
 // When it's NOT set (local dev), skip auth entirely so the app is usable

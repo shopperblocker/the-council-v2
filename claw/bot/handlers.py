@@ -44,7 +44,7 @@ ALLOWED_CHAT_IDS: set[int] = {
 
 def _is_authorized(update: Update) -> bool:
     if not ALLOWED_CHAT_IDS:
-        return True  # No restriction configured
+        return False  # Deny by default when no allowed IDs configured
     chat_id = update.effective_chat.id if update.effective_chat else None
     return chat_id in ALLOWED_CHAT_IDS
 

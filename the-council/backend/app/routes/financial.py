@@ -113,11 +113,13 @@ async def financial_dashboard(db: AsyncSession = Depends(get_db)):
     recent_transactions = result.scalars().all()
 
     # Income vs expenses this month
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(
             func.sum(Transaction.amount).filter(Transaction.amount > 0),
             func.sum(Transaction.amount).filter(Transaction.amount < 0),
-        )
+        ).where(Transaction.date >= month_start)
     )
     row = result.one()
     total_income = row[0] or 0.0
@@ -256,13 +258,22 @@ async def create_transaction(data: TransactionCreate, db: AsyncSession = Depends
 
 @router.delete("/transactions/{transaction_id}")
 async def delete_transaction(transaction_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a transaction."""
+    """Delete a transaction and reverse its effect on the account balance."""
     result = await db.execute(
         select(Transaction).where(Transaction.id == transaction_id)
     )
     transaction = result.scalar_one_or_none()
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
+
+    # Reverse the balance adjustment on the parent account
+    acct_result = await db.execute(
+        select(FinancialAccount).where(FinancialAccount.id == transaction.account_id)
+    )
+    account = acct_result.scalar_one_or_none()
+    if account:
+        account.balance -= transaction.amount
+        account.updated_at = datetime.now(timezone.utc)
 
     await db.execute(delete(Transaction).where(Transaction.id == transaction_id))
     await db.flush()

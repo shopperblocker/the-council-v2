@@ -57,6 +57,17 @@ function WarRoom() {
       .catch(() => {});
   }, []);
 
+  // Cleanup streams and animation frames on unmount
+  useEffect(() => {
+    return () => {
+      streamController?.abort();
+      if (rafId.current !== null) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
+      }
+    };
+  }, [streamController]);
+
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -148,10 +159,17 @@ function WarRoom() {
 
       onAgentEnd: (data: { agent: string }) => {
         setSpeakingAgent(null);
+        // Flush any pending tokens synchronously before ending the stream
+        if (rafId.current !== null) {
+          cancelAnimationFrame(rafId.current);
+          rafId.current = null;
+        }
+        const remaining = pendingTokens.current.get(data.agent) ?? "";
+        pendingTokens.current.delete(data.agent);
         setMessages((prev) =>
           prev.map((m) =>
             m.sender === data.agent && m.isStreaming
-              ? { ...m, isStreaming: false }
+              ? { ...m, content: m.content + remaining, isStreaming: false }
               : m
           )
         );

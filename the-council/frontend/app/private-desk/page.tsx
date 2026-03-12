@@ -56,6 +56,13 @@ function PrivateDeskInner() {
       .catch(() => setError("Failed to load advisors. Is the backend running?"));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Cleanup stream on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   // Auto-scroll to latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
