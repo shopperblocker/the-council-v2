@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-12
 **Scope:** Complete codebase (backend, frontend, Claw orchestrator, CI/CD, infrastructure)
-**Findings:** 41 total — 6 critical bugs, 8 high security issues, 12 medium quality issues, 15 low improvements
+**Findings:** 44 total — 6 critical bugs, 8 high security issues, 15 medium quality issues, 15 low improvements
 
 ---
 
@@ -133,6 +133,21 @@ However, there are **bugs**, **security gaps**, **validation holes**, and **test
 **File:** `claw/context/project_contexts.py`
 **Impact:** Repo paths use `Path.home() / "Downloads" / "the-council-v2"`. This only works on the developer's local machine, not on the VPS where paths differ.
 **Fix:** Use environment variables or auto-detect project roots.
+
+### 22b. Claw DB connection leak in postgres sync error path
+**File:** `claw/registry/task_registry.py` — `_sync_to_postgres_direct()`
+**Impact:** `conn.close()` only runs on the happy path. If `execute()` or `commit()` raises, the connection leaks. No `finally` block.
+**Fix:** Wrap in `try/finally` or use `with` context manager.
+
+### 22c. Claw `append_to_memory` crashes on last-line sections
+**File:** `claw/context/personal_context.py:46`
+**Impact:** `content.index("\n", idx)` raises `ValueError` if the section heading is the last line with no trailing newline.
+**Fix:** Use `content.find("\n", idx)` and handle `-1` return value.
+
+### 22d. Claw retry never increments `retry_count`
+**File:** `claw/bot/handlers.py`
+**Impact:** Retry creates a brand-new task with `retry_count=0`. The old task is marked "killed" and the new one starts fresh. The retry count field is effectively dead code.
+**Fix:** Pass the incremented count to the new task.
 
 ---
 
