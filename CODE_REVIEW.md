@@ -2,6 +2,7 @@
 
 **Date:** 2026-03-12
 **Scope:** Complete codebase (backend, frontend, Claw orchestrator, CI/CD, infrastructure)
+**Findings:** 41 total — 6 critical bugs, 8 high security issues, 12 medium quality issues, 15 low improvements
 
 ---
 
@@ -178,6 +179,76 @@ Both `PATCH /{id}/view` and `POST /{id}/viewed` map to the same handler. Likely 
 
 ---
 
+## FRONTEND — React / Next.js Specific Issues
+
+### 31. War Room: `requestAnimationFrame` not cleaned up on unmount
+**File:** `frontend/app/war-room/page.tsx`
+**Severity:** HIGH
+**Impact:** If the user navigates away while a debate is streaming, the rAF callback fires and calls `setMessages` on an unmounted component. The SSE connection also remains open since the `AbortController` is only aborted in `handleNewDebate`, not on unmount.
+**Fix:** Add a cleanup `useEffect` that aborts `streamController` and cancels pending `requestAnimationFrame`.
+
+### 32. War Room: Pending tokens lost on `agent_end`
+**File:** `frontend/app/war-room/page.tsx`
+**Severity:** MEDIUM
+**Impact:** The `onAgentEnd` handler sets `isStreaming: false` before the next animation frame fires. Accumulated tokens in `pendingTokens` for that agent are never flushed because the rAF callback can't find a streaming message for that sender.
+**Fix:** Flush `pendingTokens` synchronously in `onAgentEnd` before setting `isStreaming: false`.
+
+### 33. Private Desk: AbortController not aborted on unmount
+**File:** `frontend/app/private-desk/page.tsx`
+**Severity:** MEDIUM
+**Impact:** Same unmount cleanup gap as War Room. SSE streams continue in background after navigation.
+**Fix:** Add cleanup `useEffect`.
+
+### 34. Private Desk: Duplicate streaming message placeholders
+**File:** `frontend/app/private-desk/page.tsx`
+**Severity:** MEDIUM
+**Impact:** Both `onConversationStart` and `onAgentStart` add a streaming placeholder message. For new sessions where both events fire, the UI shows a duplicate empty bubble.
+**Fix:** De-duplicate — only create the placeholder in one handler.
+
+### 35. Frontend middleware exempts all `/api/` routes from auth
+**File:** `frontend/middleware.ts:6`
+**Severity:** HIGH
+**Impact:** `PUBLIC_PREFIXES` includes `"/api/"`, so all API routes are accessible without session authentication via the Next.js server. Combined with the backend's optional `ApiKeyMiddleware`, if `API_KEY` is unset, every endpoint is fully open.
+**Fix:** Remove `"/api/"` from `PUBLIC_PREFIXES` or ensure backend auth is always enabled in production.
+
+### 36. No security headers in Next.js config
+**File:** `frontend/next.config.mjs`
+**Severity:** MEDIUM
+**Impact:** No CSP, HSTS, X-Frame-Options, or X-Content-Type-Options headers configured.
+**Fix:** Add security headers via `next.config.mjs` `headers()` function.
+
+### 37. `ConversationSidebar`: AbortController doesn't actually cancel the fetch
+**File:** `frontend/components/ConversationSidebar.tsx:72-84`
+**Severity:** LOW
+**Impact:** An `AbortController` is created but the signal is never passed to the `fetch` calls inside `fetchSessions`/`fetchPrivateDeskSessions`. The abort only prevents state updates via the `signal.aborted` check, not actual network cancellation.
+**Fix:** Pass `AbortSignal` through the API functions.
+
+### 38. `ConversationSidebar`: Debounce timeout not cleaned up on unmount
+**File:** `frontend/components/ConversationSidebar.tsx:91`
+**Severity:** LOW
+**Impact:** `setTimeout` ID in `debounceRef` is never cleared on unmount, potentially causing a state update on an unmounted component.
+**Fix:** Add a cleanup `useEffect` that clears the timeout.
+
+### 39. `ErrorBanner` uses light-theme colors in a dark-themed app
+**File:** `frontend/components/ErrorBanner.tsx:12`
+**Severity:** LOW
+**Impact:** Uses `bg-red-50`, `text-red-700` (light palette) while the entire app uses a dark glassmorphism theme. Visually jarring.
+**Fix:** Use dark-compatible red tones (e.g., `bg-red-900/50`, `text-red-300`).
+
+### 40. `markInsightViewed` and `markInsightActedOn` silently swallow errors
+**File:** `frontend/lib/api.ts:238-244`
+**Severity:** LOW
+**Impact:** Neither function checks `res.ok`. Failed POST requests are ignored with no user feedback.
+**Fix:** Add error checking or at minimum log failures.
+
+### 41. Multiple REST functions return untyped `Promise<any>`
+**File:** `frontend/lib/api.ts`
+**Severity:** LOW
+**Impact:** `fetchSession`, `fetchSessions`, `fetchFinancialDashboard`, `fetchBusinessDashboard` lack return type annotations, losing TypeScript safety.
+**Fix:** Add explicit return types.
+
+---
+
 ## Architecture Observations (Not Bugs)
 
 **Strengths:**
@@ -199,8 +270,10 @@ Both `PATCH /{id}/view` and `POST /{id}/viewed` map to the same handler. Likely 
 ## Recommended Priority Order
 
 1. **Fix critical bugs** (#1-6) — data integrity issues
-2. **Address security gaps** (#7-12) — especially auth timing attack and Claw bot open auth
-3. **Add input validation** (#13-14) — prevent bad data from entering the system
-4. **Wrap SSE generators** (#15) — prevent silent stream deaths
-5. **Expand test coverage** (#27) — critical path modules first
-6. **Clean up inconsistencies** (#16-26) — code quality debt
+2. **Address security gaps** (#7-12, #35) — auth timing attack, Claw bot open auth, frontend auth bypass
+3. **Fix frontend streaming bugs** (#31-34) — memory leaks and token loss
+4. **Add input validation** (#13-14) — prevent bad data from entering the system
+5. **Wrap SSE generators** (#15) — prevent silent stream deaths
+6. **Add security headers** (#36) — CSP, HSTS, X-Frame-Options
+7. **Expand test coverage** (#27) — critical path modules first
+8. **Clean up inconsistencies** (#16-26, #37-41) — code quality debt
